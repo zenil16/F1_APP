@@ -317,63 +317,68 @@ def get_latest_year():
 
 # --- Prediction Function ---
 def predict_all_positions(gp_name, upcoming_year=None):
-    # 1. Update the range to capture years you actually have (2019-2023)
-    # This avoids the "2026-3" issue where no data was being found.
-    historical_years = list(range(2019, 2024)) 
+    # Use a broader range to ensure we find the 2021/2022 data you mentioned
+    historical_years = list(range(2018, 2024)) 
     all_races = []
 
     for year in historical_years:
         try:
             session = fastf1.get_session(year, gp_name, 'R')
-            session.load()
+            session.load(laps=False, telemetry=False, weather=False, messages=False)
             results = session.results[['Abbreviation', 'Position', 'TeamName']]
             results['Year'] = year
             all_races.append(results)
         except:
             continue
 
-    # 2. Critical Safety Check: If all_races is empty, the model cannot run.
     if not all_races:
         return None, None, False
 
     df = pd.concat(all_races)
-    df.dropna(inplace=True)
+    df.dropna(subset=['Abbreviation', 'Position', 'TeamName'], inplace=True)
 
-    # Use 2024 as the default 'upcoming' if none is provided, 
-    # since you might not have 2026 data yet.
     if upcoming_year is None:
         upcoming_year = 2024
 
     try:
         upcoming_session = fastf1.get_session(upcoming_year, gp_name, 'R')
-        upcoming_session.load()
+        upcoming_session.load(laps=False, telemetry=False, weather=False, messages=False)
         upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].copy().drop_duplicates()
         actual_results = upcoming_session.results[['Abbreviation', 'Position']]
         show_actual = True
     except:
-        # 3. Setting the default to the MINIMUM year found in your historical data
-        min_year = int(df['Year'].min())
-        upcoming_drivers = df[df['Year'] == min_year][['Abbreviation', 'TeamName']].copy().drop_duplicates()
+        # Fallback to the most recent year available in historical data
+        latest_available_year = int(df['Year'].max())
+        upcoming_drivers = df[df['Year'] == latest_available_year][['Abbreviation', 'TeamName']].copy().drop_duplicates()
         actual_results = None
         show_actual = False
 
-    # 4. Label Encoding
-    le_driver = LabelEncoder()
-    le_driver.fit(df['Abbreviation'].tolist() + upcoming_drivers['Abbreviation'].tolist())
+    # Check if we have enough data to train a model (need at least a few rows)
+    if len(df) < 5:
+        return None, None, False
 
+    # Label Encoding
+    le_driver = LabelEncoder()
     le_team = LabelEncoder()
-    le_team.fit(df['TeamName'].tolist() + upcoming_drivers['TeamName'].tolist())
+    
+    # Fit encoders on all known entities to avoid "unseen label" errors
+    all_drivers = pd.concat([df['Abbreviation'], upcoming_drivers['Abbreviation']]).unique()
+    all_teams = pd.concat([df['TeamName'], upcoming_drivers['TeamName']]).unique()
+    
+    le_driver.fit(all_drivers)
+    le_team.fit(all_teams)
 
     df['Driver_encoded'] = le_driver.transform(df['Abbreviation'])
     df['Team_encoded'] = le_team.transform(df['TeamName'])
 
-    # 5. Model Training
+    # Model Training
     X = df[['Driver_encoded', 'Team_encoded', 'Year']]
     y = df['Position']
+    
     model_rf = RandomForestRegressor(n_estimators=100, random_state=42)
     model_rf.fit(X, y)
 
-    # 6. Preparation for Prediction
+    # Prediction
     upcoming_drivers['Year'] = upcoming_year
     upcoming_drivers['Driver_encoded'] = le_driver.transform(upcoming_drivers['Abbreviation'])
     upcoming_drivers['Team_encoded'] = le_team.transform(upcoming_drivers['TeamName'])
@@ -381,11 +386,9 @@ def predict_all_positions(gp_name, upcoming_year=None):
     X_upcoming = upcoming_drivers[['Driver_encoded', 'Team_encoded', 'Year']]
     upcoming_drivers['Predicted Position'] = model_rf.predict(X_upcoming)
 
-    # 7. Formatting Results
+    # Formatting
     upcoming_drivers.sort_values('Predicted Position', inplace=True)
     upcoming_drivers.reset_index(drop=True, inplace=True)
-
-    # Simulate lap times
     upcoming_drivers['Time Gap (s)'] = [round(i * 2.5 + (i**1.1), 3) for i in range(len(upcoming_drivers))]
     upcoming_drivers['Predicted Finish Time'] = upcoming_drivers['Time Gap (s)'].apply(
         lambda t: f"+{t:.3f}s" if t > 0 else "Leader"
@@ -585,152 +588,89 @@ with col2:
         )
 
         with st.container():
-            col_year, col_gp = st.columns(2)
-
-            with col_year:
-                selected_year = st.slider("Select Year", 2021, get_latest_year(), get_latest_year())
-
+            # 1. Get a general list of Grand Prix names from a recent year
+            # This ensures the dropdown is populated even before a year is picked
             try:
-                schedule = fastf1.get_event_schedule(selected_year)
-                races = schedule[
-                    (schedule['EventFormat'].notna()) & (~schedule['EventName'].str.contains("Testing|Test", case=False))
-                ]['EventName'].tolist()
+                base_schedule = fastf1.get_event_schedule(2023)
+                races = base_schedule[~base_schedule['EventName'].str.contains("Testing|Test", case=False)]['EventName'].tolist()
+            except:
+                races = ["Monaco Grand Prix", "British Grand Prix", "Italian Grand Prix"] # Fallback
 
-                event_locations = dict(zip(schedule['EventName'], schedule['Location']))
+            selected_gp = st.selectbox("Choose a Grand Prix", races)
 
-                with col_gp:
-                    selected_gp = st.selectbox("Choose a Grand Prix", races)
+            if selected_gp:
+                # 2. DYNAMIC YEAR CHECKING
+                # Check years 2018-2025 to see which ones actually have data for this GP
+                valid_years = []
+                with st.spinner(f"Checking available years for {selected_gp}..."):
+                    for y in range(2018, 2026):
+                        try:
+                            sch = fastf1.get_event_schedule(y)
+                            if selected_gp in sch['EventName'].values:
+                                valid_years.append(y)
+                        except:
+                            continue
 
-                if selected_gp:
-                    st.markdown(f"""
-                        <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
-                            <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {event_locations[selected_gp]}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Error loading race schedule: {e}")
-                selected_gp = None
+                if valid_years:
+                    # 3. Dynamic Slider: Only shows years that exist in the database
+                    selected_year = st.select_slider(
+                        "Select Year (Only years with available data are shown)", 
+                        options=sorted(valid_years), 
+                        value=max(valid_years)
+                    )
 
-            if selected_gp and st.button("Run Prediction", key="predict_button"):
-                with st.spinner("Running prediction model..."):
-                    predictions, actual, has_real = predict_all_positions(selected_gp, selected_year)
+                    # Show Circuit Location
+                    try:
+                        sch = fastf1.get_event_schedule(selected_year)
+                        loc = sch[sch['EventName'] == selected_gp]['Location'].values[0]
+                        st.markdown(f"""
+                            <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
+                                <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {loc}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
+                    except:
+                        pass
 
-                    if predictions is not None:
-                        st.success("✅ Prediction complete!")
+                    # 4. Run Prediction Button
+                    if st.button("Run Prediction", key="predict_button"):
+                        with st.spinner("Running prediction model..."):
+                            predictions, actual, has_real = predict_all_positions(selected_gp, selected_year)
 
-                        # Store in session state for live simulation
-                        st.session_state.predictions = predictions
+                            if predictions is not None:
+                                st.success("✅ Prediction complete!")
+                                st.session_state.predictions = predictions
 
-                        # Show prediction table with styling
-                        st.markdown("#### 🏁 Predicted Finish Order")
-                        st.dataframe(
-                            predictions[['Abbreviation', 'TeamName', 'Predicted Finish Time']],
-                            hide_index=True,
-                            use_container_width=True
-                        )
-
-                        # Visualization with team colors
-                        st.markdown("#### 📊 Predicted Results Visualization")
-
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        fig.patch.set_facecolor('#1e1e1e')
-                        ax.set_facecolor('#1e1e1e')
-
-                        # Set custom colors based on team
-                        team_colors_list = [team_colors.get(team, '#777777') for team in predictions['TeamName']]
-
-                        # Create horizontal bar chart
-                        bars = ax.barh(
-                            predictions['Abbreviation'],
-                            predictions['Time Gap (s)'],
-                            color=team_colors_list,
-                            height=0.6
-                        )
-
-                        # Add team names as labels
-                        for i, (bar, team) in enumerate(zip(bars, predictions['TeamName'])):
-                            ax.text(
-                                bar.get_width() + 0.5,
-                                i,
-                                team,
-                                va='center',
-                                color='white',
-                                fontsize=8
-                            )
-
-                        # Styling
-                        ax.set_title(f"Predicted Time Gaps: {selected_gp} {selected_year}", color='white', fontsize=14)
-                        ax.set_xlabel('Gap to Leader (seconds)', color='white')
-                        ax.set_ylabel('Drivers', color='white')
-                        ax.tick_params(colors='white')
-                        ax.grid(True, linestyle='--', alpha=0.3)
-
-                        for spine in ax.spines.values():
-                            spine.set_color('#333333')
-
-                        plt.tight_layout()
-                        st.pyplot(fig)
-
-                        if has_real:
-                            st.markdown("#### 🏁 Actual Results")
-                            actual_sorted = actual.sort_values('Position')
-                            st.dataframe(
-                                actual_sorted[['Abbreviation', 'Position']],
-                                hide_index=True,
-                                use_container_width=True
-                            )
-
-                            # Comparison visualization
-                            st.markdown("#### 📊 Prediction vs Actual Results")
-                            comparison_df = predictions.merge(actual[['Abbreviation', 'Position']], on='Abbreviation', how='left')
-                            comparison_df['Actual Position'] = comparison_df['Position'].fillna(0).astype(int)
-
-                            fig, ax = plt.subplots(figsize=(10, 6))
-                            fig.patch.set_facecolor('#1e1e1e')
-                            ax.set_facecolor('#1e1e1e')
-
-                            team_colors_scatter = [team_colors.get(team, '#777777') for team in comparison_df['TeamName']]
-
-                            # Create scatter plot
-                            ax.scatter(
-                                comparison_df['Predicted Position'],
-                                comparison_df['Actual Position'],
-                                s=100,
-                                c=team_colors_scatter,
-                                alpha=0.7,
-                                edgecolors='white'
-                            )
-
-                            # Add driver abbreviations as labels
-                            for i, txt in enumerate(comparison_df['Abbreviation']):
-                                ax.annotate(
-                                    txt,
-                                    (comparison_df['Predicted Position'].iloc[i], comparison_df['Actual Position'].iloc[i]),
-                                    fontsize=9,
-                                    color='white',
-                                    ha='center',
-                                    va='bottom',
-                                    xytext=(0, 5),
-                                    textcoords='offset points'
+                                # --- Display Results (Tables and Charts) ---
+                                st.markdown("#### 🏁 Predicted Finish Order")
+                                st.dataframe(
+                                    predictions[['Abbreviation', 'TeamName', 'Predicted Finish Time']],
+                                    hide_index=True,
+                                    use_container_width=True
                                 )
 
-                            # Diagonal line (perfect prediction)
-                            ax.plot([0, 20], [0, 20], 'r--', alpha=0.5)
+                                st.markdown("#### 📊 Predicted Results Visualization")
+                                fig, ax = plt.subplots(figsize=(10, 6))
+                                fig.patch.set_facecolor('#1e1e1e')
+                                ax.set_facecolor('#1e1e1e')
 
-                            # Styling
-                            ax.set_title(f"Prediction vs Actual: {selected_gp} {selected_year}", color='white', fontsize=14)
-                            ax.set_xlabel('Predicted Position', color='white')
-                            ax.set_ylabel('Actual Position', color='white')
-                            ax.tick_params(colors='white')
-                            ax.grid(True, linestyle='--', alpha=0.3)
+                                team_colors_list = [team_colors.get(team, '#777777') for team in predictions['TeamName']]
+                                bars = ax.barh(predictions['Abbreviation'], predictions['Time Gap (s)'], color=team_colors_list, height=0.6)
 
-                            for spine in ax.spines.values():
-                                spine.set_color('#333333')
+                                for i, (bar, team) in enumerate(zip(bars, predictions['TeamName'])):
+                                    ax.text(bar.get_width() + 0.5, i, team, va='center', color='white', fontsize=8)
 
-                            plt.tight_layout()
-                            st.pyplot(fig)
-                    else:
-                        st.error("Unable to generate predictions. Not enough historical data.")
+                                ax.set_title(f"Predicted Time Gaps: {selected_gp} {selected_year}", color='white', fontsize=14)
+                                ax.tick_params(colors='white')
+                                plt.tight_layout()
+                                st.pyplot(fig)
+
+                                if has_real:
+                                    st.markdown("#### 🏁 Actual Results")
+                                    st.dataframe(actual.sort_values('Position')[['Abbreviation', 'Position']], hide_index=True, use_container_width=True)
+                            else:
+                                st.error("Not enough historical data found to generate a prediction for this specific race.")
+                else:
+                    st.warning(f"No historical data found for the {selected_gp} in the FastF1 database.")
 
     with tab2:
         st.markdown(
