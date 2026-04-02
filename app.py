@@ -258,7 +258,12 @@ def get_schedule_for_year(year):
         schedule = fastf1.get_event_schedule(year)
         races = schedule[
             (schedule['EventFormat'].notna()) &
-            (~schedule['EventName'].str.contains("Testing|Test", case=False, na=False))
+            (schedule['EventFormat'] != 'testing') &
+            (schedule['RoundNumber'] > 0) &
+            (~schedule['EventName'].str.contains(
+                "Testing|Test|Pre-Season|Track Session|Filming|Shakedown",
+                case=False, na=False
+            ))
         ]
         return races
     except Exception:
