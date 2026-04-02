@@ -374,53 +374,36 @@ def resolve_event_name(year: int, target_gp_name: str, target_location: str = No
     return None
 
 @st.cache_data(show_spinner=False)
-def get_predictable_gps(year: int):
-    schedule = get_valid_schedule_for_year(year)
-    if schedule.empty:
-        return [], {}
+def get_predictable_gps(year):
+    try:
+        schedule = get_valid_schedule_for_year(year)
+        if schedule.empty:
+            return [], {}
 
-    races = []
-    info_map = {}
+        races = schedule["EventName"].dropna().tolist()
+        info_map = {}
 
-    for _, row in schedule.iterrows():
-        gp_name = row["EventName"]
-        gp_location = row.get("Location")
-        gp_country = row.get("Country")
-
-        hist_years = list(range(max(2018, year - 3), year))
-        success_count = 0
-
-        for hist_year in hist_years:
-            resolved_name = resolve_event_name(hist_year, gp_name, gp_location, gp_country)
-            if not resolved_name:
-                continue
-
-            try:
-                session = fastf1.get_session(hist_year, resolved_name, "R")
-                session.load()
-                if session.results is not None and not session.results.empty:
-                    success_count += 1
-            except Exception:
-                continue
-
-        if success_count >= 1:
-            races.append(gp_name)
+        for _, row in schedule.iterrows():
+            gp_name = row["EventName"]
             info_map[gp_name] = {
-                "location": gp_location,
-                "country": gp_country
+                "location": row.get("Location"),
+                "country": row.get("Country")
             }
 
-    return races, info_map
+        return races, info_map
+
+    except Exception:
+        return [], {}
 
 @st.cache_data(show_spinner=False)
 def get_predictable_years():
     latest_year = get_latest_schedule_year()
     valid_years = []
 
-    for year in range(2019, latest_year + 1):
+    for year in range(2018, latest_year + 1):
         try:
-            races, _ = get_predictable_gps(year)
-            if races:
+            schedule = get_valid_schedule_for_year(year)
+            if not schedule.empty:
                 valid_years.append(year)
         except Exception:
             continue
