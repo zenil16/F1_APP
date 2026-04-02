@@ -317,11 +317,9 @@ def get_latest_year():
 
 # --- Prediction Function ---
 def predict_all_positions(gp_name, upcoming_year=None):
-    current_year = get_latest_year()
-    if upcoming_year is None:
-        upcoming_year = current_year
-
-    historical_years = list(range(current_year - 3, current_year))
+    # 1. Update the range to capture years you actually have (2019-2023)
+    # This avoids the "2026-3" issue where no data was being found.
+    historical_years = list(range(2019, 2024)) 
     all_races = []
 
     for year in historical_years:
@@ -334,23 +332,32 @@ def predict_all_positions(gp_name, upcoming_year=None):
         except:
             continue
 
+    # 2. Critical Safety Check: If all_races is empty, the model cannot run.
     if not all_races:
-        return None, None, None
+        return None, None, False
 
     df = pd.concat(all_races)
     df.dropna(inplace=True)
 
+    # Use 2024 as the default 'upcoming' if none is provided, 
+    # since you might not have 2026 data yet.
+    if upcoming_year is None:
+        upcoming_year = 2024
+
     try:
         upcoming_session = fastf1.get_session(upcoming_year, gp_name, 'R')
         upcoming_session.load()
-        upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].drop_duplicates()
+        upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].copy().drop_duplicates()
         actual_results = upcoming_session.results[['Abbreviation', 'Position']]
         show_actual = True
     except:
-        upcoming_drivers = df[df['Year'] == max(df['Year'])][['Abbreviation', 'TeamName']].drop_duplicates()
+        # 3. Setting the default to the MINIMUM year found in your historical data
+        min_year = int(df['Year'].min())
+        upcoming_drivers = df[df['Year'] == min_year][['Abbreviation', 'TeamName']].copy().drop_duplicates()
         actual_results = None
         show_actual = False
 
+    # 4. Label Encoding
     le_driver = LabelEncoder()
     le_driver.fit(df['Abbreviation'].tolist() + upcoming_drivers['Abbreviation'].tolist())
 
@@ -360,11 +367,13 @@ def predict_all_positions(gp_name, upcoming_year=None):
     df['Driver_encoded'] = le_driver.transform(df['Abbreviation'])
     df['Team_encoded'] = le_team.transform(df['TeamName'])
 
+    # 5. Model Training
     X = df[['Driver_encoded', 'Team_encoded', 'Year']]
     y = df['Position']
     model_rf = RandomForestRegressor(n_estimators=100, random_state=42)
     model_rf.fit(X, y)
 
+    # 6. Preparation for Prediction
     upcoming_drivers['Year'] = upcoming_year
     upcoming_drivers['Driver_encoded'] = le_driver.transform(upcoming_drivers['Abbreviation'])
     upcoming_drivers['Team_encoded'] = le_team.transform(upcoming_drivers['TeamName'])
@@ -372,11 +381,11 @@ def predict_all_positions(gp_name, upcoming_year=None):
     X_upcoming = upcoming_drivers[['Driver_encoded', 'Team_encoded', 'Year']]
     upcoming_drivers['Predicted Position'] = model_rf.predict(X_upcoming)
 
+    # 7. Formatting Results
     upcoming_drivers.sort_values('Predicted Position', inplace=True)
     upcoming_drivers.reset_index(drop=True, inplace=True)
 
     # Simulate lap times
-    base_time = 4866.0
     upcoming_drivers['Time Gap (s)'] = [round(i * 2.5 + (i**1.1), 3) for i in range(len(upcoming_drivers))]
     upcoming_drivers['Predicted Finish Time'] = upcoming_drivers['Time Gap (s)'].apply(
         lambda t: f"+{t:.3f}s" if t > 0 else "Leader"
