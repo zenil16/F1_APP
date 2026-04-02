@@ -659,6 +659,7 @@ st.markdown(
 col1, col2, col3 = st.columns([1, 2, 1])
 
 # --- Column 1: Chatbot ---
+# --- Column 1: Chatbot ---
 with col1:
     st.markdown(
         """
@@ -676,39 +677,43 @@ with col1:
     messages = fetch_conversation_history()
     for message in messages:
         if message['role'] == 'model':
-            st.markdown(f'<div class="bot-message"><strong>RaceMaster:</strong> {message["parts"]}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="bot-message"><strong>RaceMaster:</strong> {message["parts"]}</div>',
+                unsafe_allow_html=True
+            )
         elif message['role'] == 'user' and "System prompt" not in message['parts']:
-            st.markdown(f'<div class="user-message"><strong>You:</strong> {message["parts"]}</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="user-message"><strong>You:</strong> {message["parts"]}</div>',
+                unsafe_allow_html=True
+            )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Chat input
-    # Chat input
-if st.session_state.get("trivia_active", False):
-    st.markdown(
-        """
-        <div style="background-color: rgba(225, 6, 0, 0.3); padding: 10px; border-radius: 5px; margin: 10px 0;">
-            <p style="color: white; margin: 0;">Chat is disabled during Trivia Game. Complete or end the game to resume chatting.</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    # Disabled input (for visual consistency)
-    st.text_input("Chat disabled during trivia...", disabled=True, key="disabled_chat")
-else:
-    user_input = st.chat_input("Ask something about F1...")
-    if user_input:
-        messages = fetch_conversation_history()
-        messages.append({"role": "user", "parts": user_input})
+    # Chat input must stay INSIDE col1
+    if st.session_state.get("trivia_active", False):
+        st.markdown(
+            """
+            <div style="background-color: rgba(225, 6, 0, 0.3); padding: 10px; border-radius: 5px; margin: 10px 0;">
+                <p style="color: white; margin: 0;">Chat is disabled during Trivia Game. Complete or end the game to resume chatting.</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        st.text_input("Chat disabled during trivia...", disabled=True, key="disabled_chat")
+    else:
+        user_input = st.chat_input("Ask something about F1...")
+        if user_input:
+            messages = fetch_conversation_history()
+            messages.append({"role": "user", "parts": user_input})
 
-        with st.spinner("RaceMaster is thinking..."):
-            response_text = response(messages)
+            with st.spinner("RaceMaster is thinking..."):
+                response_text = response(messages)
 
-        if isinstance(response_text, str):
-            st.error(response_text)
-        else:
-            messages.append({"role": "model", "parts": response_text.text})
-            st.rerun()
+            if isinstance(response_text, str):
+                st.error(response_text)
+            else:
+                messages.append({"role": "model", "parts": response_text.text})
+                st.rerun()
 
 # --- Column 2: Prediction + Trivia Tabs ---
 with col2:
@@ -731,31 +736,37 @@ with col2:
                 available_years = get_predictable_years()
                 default_index = len(available_years) - 1 if available_years else 0
                 selected_year = st.selectbox("Select Year", available_years, index=default_index)
+
+            if selected_year is not None:
+                try:
+                    races, event_locations = get_predictable_gps(selected_year)
             
-            try:
-                races, event_locations = get_predictable_gps(selected_year)
+                    if not races:
+                        st.warning(f"No predictable races available for {selected_year}.")
+                        selected_gp = None
+                        selected_gp_location = None
+                    else:
+                        with col_gp:
+                            selected_gp = st.selectbox("Choose a Grand Prix", races)
             
-                if not races:
-                    st.warning(f"No predictable races available for {selected_year}.")
+                        selected_gp_location = event_locations.get(selected_gp)
+            
+                        if selected_gp:
+                            st.markdown(f"""
+                                <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
+                                    <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {selected_gp_location or 'Unknown'}</p>
+                                </div>
+                            """, unsafe_allow_html=True)
+            
+                except Exception as e:
+                    st.error(f"Error loading race schedule: {e}")
                     selected_gp = None
                     selected_gp_location = None
-                else:
-                    with col_gp:
-                        selected_gp = st.selectbox("Choose a Grand Prix", races)
-            
-                    selected_gp_location = event_locations.get(selected_gp)
-            
-                    if selected_gp:
-                        st.markdown(f"""
-                            <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
-                                <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {selected_gp_location or 'Unknown'}</p>
-                            </div>
-                        """, unsafe_allow_html=True)
-            
-            except Exception as e:
-                st.error(f"Error loading race schedule: {e}")
+            else:
                 selected_gp = None
                 selected_gp_location = None
+            
+
 
             if selected_gp and st.button("Run Prediction", key="predict_button"):
                 with st.spinner("Running prediction model..."):
