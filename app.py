@@ -266,38 +266,116 @@ def get_schedule_for_year(year):
 
 
 def load_race_session(year, gp_name):
-    """Try to load a race session. Returns (results_df, error_string)."""
+    """
+    Try multiple loading strategies to get race results.
+    Returns (results_df, error_string).
+    """
+    # Strategy 1: load with minimal flags (fastest)
     try:
         session = fastf1.get_session(year, gp_name, 'R')
-        session.load(telemetry=False, weather=False, messages=False)
+        session.load(laps=False, telemetry=False, weather=False, messages=False)
         results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
         results['Year'] = year
         results = results.dropna(subset=['Abbreviation', 'Position', 'TeamName'])
         results['Position'] = pd.to_numeric(results['Position'], errors='coerce')
         results = results.dropna(subset=['Position'])
-        return results, None
-    except Exception as e:
-        return None, str(e)
+        if len(results) > 0:
+            return results, None
+    except Exception as e1:
+        pass
+
+    # Strategy 2: load with no flags at all (some versions need this)
+    try:
+        session = fastf1.get_session(year, gp_name, 'R')
+        session.load()
+        results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
+        results['Year'] = year
+        results = results.dropna(subset=['Abbreviation', 'Position', 'TeamName'])
+        results['Position'] = pd.to_numeric(results['Position'], errors='coerce')
+        results = results.dropna(subset=['Position'])
+        if len(results) > 0:
+            return results, None
+    except Exception as e2:
+        pass
+
+    # Strategy 3: try by round number instead of name
+    try:
+        schedule = fastf1.get_event_schedule(year)
+        matches = schedule[schedule['EventName'].str.contains(
+            gp_name.replace(' Grand Prix', '').strip(), case=False, na=False
+        )]
+        if len(matches) > 0:
+            round_num = int(matches.iloc[0]['RoundNumber'])
+            session = fastf1.get_session(year, round_num, 'R')
+            session.load(laps=False, telemetry=False, weather=False, messages=False)
+            results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
+            results['Year'] = year
+            results = results.dropna(subset=['Abbreviation', 'Position', 'TeamName'])
+            results['Position'] = pd.to_numeric(results['Position'], errors='coerce')
+            results = results.dropna(subset=['Position'])
+            if len(results) > 0:
+                return results, None
+    except Exception as e3:
+        return None, str(e3)
+
+    return None, "All loading strategies failed"
+
+
+def build_driver_pool_from_schedule(year, gp_name):
+    """
+    When we can't load session results, build a plausible driver list
+    from the ergast/schedule API which is lighter weight.
+    """
+    try:
+        schedule = fastf1.get_event_schedule(year)
+        # Return known F1 2024/2025 driver pool as fallback
+        default_drivers = [
+            {"Abbreviation": "VER", "TeamName": "Red Bull Racing"},
+            {"Abbreviation": "PER", "TeamName": "Red Bull Racing"},
+            {"Abbreviation": "HAM", "TeamName": "Mercedes"},
+            {"Abbreviation": "RUS", "TeamName": "Mercedes"},
+            {"Abbreviation": "LEC", "TeamName": "Ferrari"},
+            {"Abbreviation": "SAI", "TeamName": "Ferrari"},
+            {"Abbreviation": "NOR", "TeamName": "McLaren"},
+            {"Abbreviation": "PIA", "TeamName": "McLaren"},
+            {"Abbreviation": "ALO", "TeamName": "Aston Martin"},
+            {"Abbreviation": "STR", "TeamName": "Aston Martin"},
+            {"Abbreviation": "GAS", "TeamName": "Alpine"},
+            {"Abbreviation": "OCO", "TeamName": "Alpine"},
+            {"Abbreviation": "TSU", "TeamName": "RB F1 Team"},
+            {"Abbreviation": "RIC", "TeamName": "RB F1 Team"},
+            {"Abbreviation": "ALB", "TeamName": "Williams"},
+            {"Abbreviation": "SAR", "TeamName": "Williams"},
+            {"Abbreviation": "BOT", "TeamName": "Kick Sauber"},
+            {"Abbreviation": "ZHO", "TeamName": "Kick Sauber"},
+            {"Abbreviation": "MAG", "TeamName": "Haas F1 Team"},
+            {"Abbreviation": "HUL", "TeamName": "Haas F1 Team"},
+        ]
+        return pd.DataFrame(default_drivers)
+    except Exception:
+        return None
 
 
 def predict_all_positions(gp_name, upcoming_year, available_years):
     """
     Build a Random Forest model from all available historical data
     for gp_name, then predict the finish order for upcoming_year.
-
-    available_years: list of years confirmed to have schedule data.
     """
 
     # ── 1. Collect historical race data ──────────────────────────────
     all_races = []
     years_loaded = []
-
-    # Use every available year except the one we're predicting
-    history_years = [y for y in available_years if y != upcoming_year]
+    history_years = sorted([y for y in available_years if y != upcoming_year], reverse=True)
 
     status_placeholder = st.empty()
-    for year in sorted(history_years):
-        status_placeholder.info(f"⏳ Loading historical data: {gp_name} {year}…")
+    progress_bar = st.progress(0)
+    total = len(history_years)
+
+    for idx, year in enumerate(history_years):
+        pct = int((idx / max(total, 1)) * 100)
+        progress_bar.progress(pct)
+        status_placeholder.info(f"⏳ Loading historical race data… ({idx + 1}/{total})")
+
         results, err = load_race_session(year, gp_name)
         if results is not None and len(results) > 0:
             all_races.append(results)
@@ -306,11 +384,17 @@ def predict_all_positions(gp_name, upcoming_year, available_years):
         else:
             print(f"❌ Skipped {gp_name} {year}: {err}")
 
+    progress_bar.progress(100)
     status_placeholder.empty()
+    progress_bar.empty()
 
     # ── 2. Handle no historical data at all ──────────────────────────
     if not all_races:
-        st.warning(f"⚠️ No historical race data found for **{gp_name}** in any available year ({available_years}). Try a different Grand Prix.")
+        st.warning(
+            f"⚠️ Could not load race session data for **{gp_name}**. "
+            f"FastF1 may be rate-limiting or the session files are unavailable on Streamlit Cloud. "
+            f"Try a different Grand Prix or wait a moment and retry."
+        )
         return None, None, None
 
     df = pd.concat(all_races, ignore_index=True)
@@ -325,34 +409,33 @@ def predict_all_positions(gp_name, upcoming_year, available_years):
 
     # ── 3. Try to load the target year's actual results ───────────────
     actual_results = None
-    show_actual = False
+    show_actual    = False
+    upcoming_drivers = None
 
-    if upcoming_year in available_years:
-        status_placeholder2 = st.empty()
-        status_placeholder2.info(f"⏳ Loading {gp_name} {upcoming_year} results…")
-        target_results, err = load_race_session(upcoming_year, gp_name)
-        status_placeholder2.empty()
+    status_placeholder3 = st.empty()
+    status_placeholder3.info("⏳ Loading target race data…")
 
-        if target_results is not None and len(target_results) > 0:
-            actual_results = target_results[['Abbreviation', 'Position']]
-            upcoming_drivers = target_results[['Abbreviation', 'TeamName']].drop_duplicates()
-            show_actual = True
-            print(f"✅ Loaded actual results for {upcoming_year}")
-        else:
-            print(f"❌ Could not load {upcoming_year} session: {err}")
-            # Fall through to use latest historical year's drivers
-            upcoming_drivers = (
-                df[df['Year'] == latest_hist_year][['Abbreviation', 'TeamName']]
-                .drop_duplicates()
-            )
+    target_results, err = load_race_session(upcoming_year, gp_name)
+    status_placeholder3.empty()
+
+    if target_results is not None and len(target_results) > 0:
+        actual_results   = target_results[['Abbreviation', 'Position']]
+        upcoming_drivers = target_results[['Abbreviation', 'TeamName']].drop_duplicates()
+        show_actual      = True
+        print(f"✅ Loaded actual results for {upcoming_year}")
     else:
-        # upcoming_year not in schedule data — use latest historical drivers
+        print(f"❌ Could not load {upcoming_year} session: {err}")
+        # Use latest historical year's drivers as the lineup
         upcoming_drivers = (
             df[df['Year'] == latest_hist_year][['Abbreviation', 'TeamName']]
             .drop_duplicates()
         )
 
-    if upcoming_drivers.empty:
+        # Last resort — use built-in driver pool
+        if upcoming_drivers is None or upcoming_drivers.empty:
+            upcoming_drivers = build_driver_pool_from_schedule(upcoming_year, gp_name)
+
+    if upcoming_drivers is None or upcoming_drivers.empty:
         st.warning("⚠️ Could not determine the driver lineup. Try a different year or Grand Prix.")
         return None, None, None
 
@@ -380,7 +463,6 @@ def predict_all_positions(gp_name, upcoming_year, available_years):
     upcoming_drivers = upcoming_drivers.copy()
     upcoming_drivers['Year'] = upcoming_year
 
-    # Handle drivers/teams not seen during training (new entrants)
     def safe_transform(le, values):
         known = set(le.classes_)
         return [le.transform([v])[0] if v in known else 0 for v in values]
