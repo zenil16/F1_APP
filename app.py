@@ -20,6 +20,14 @@ if not os.path.exists('cache'):
     os.makedirs('cache')
 
 fastf1.Cache.enable_cache('cache')
+# ✅ Temporary debug block
+for year in range(2018, 2027):
+    try:
+        schedule = fastf1.get_event_schedule(year)
+        print(f"✅ {year}: {len(schedule)} events")
+    except Exception as e:
+        print(f"❌ {year}: no data — {str(e)}")
+
 dotenv.load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=api_key)
@@ -321,24 +329,39 @@ def predict_all_positions(gp_name, upcoming_year=None):
     if upcoming_year is None:
         upcoming_year = current_year
 
-    historical_years = list(range(current_year - 3, current_year))
+    # Try a wider range and collect whatever years actually have data
+    MAX_HISTORY = 5
     all_races = []
+    years_with_data = []
 
-    for year in historical_years:
+    for year in range(current_year - MAX_HISTORY, current_year + 1):
         try:
             session = fastf1.get_session(year, gp_name, 'R')
             session.load()
-            results = session.results[['Abbreviation', 'Position', 'TeamName']]
+            results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
             results['Year'] = year
             all_races.append(results)
-        except:
+            years_with_data.append(year)
+            print(f"✅ Loaded {gp_name} {year}")
+        except Exception as e:
+            print(f"❌ Could not load {gp_name} {year}: {str(e)}")
             continue
 
     if not all_races:
+        print("❌ No race data found at all — returning None")
         return None, None, None
 
     df = pd.concat(all_races)
     df.dropna(inplace=True)
+
+    if df.empty:
+        print("❌ DataFrame is empty after dropna — returning None")
+        return None, None, None
+
+    # Use the most recent year that actually has data
+    latest_available_year = max(years_with_data)
+    print(f"✅ Latest available year: {latest_available_year}")
+    print(f"✅ Years with data: {years_with_data}")
 
     try:
         upcoming_session = fastf1.get_session(upcoming_year, gp_name, 'R')
@@ -346,11 +369,25 @@ def predict_all_positions(gp_name, upcoming_year=None):
         upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].drop_duplicates()
         actual_results = upcoming_session.results[['Abbreviation', 'Position']]
         show_actual = True
-    except:
-        upcoming_drivers = df[df['Year'] == max(df['Year'])][['Abbreviation', 'TeamName']].drop_duplicates()
+        print(f"✅ Loaded upcoming session for {upcoming_year}")
+    except Exception as e:
+        print(f"❌ Could not load upcoming session {upcoming_year}: {str(e)}")
+        # Fall back to the latest year that actually loaded successfully
+        latest_df = df[df['Year'] == latest_available_year][['Abbreviation', 'TeamName']].drop_duplicates()
+
+        if latest_df.empty:
+            print("❌ latest_df is empty — returning None")
+            return None, None, None
+
+        upcoming_drivers = latest_df
         actual_results = None
         show_actual = False
 
+    if upcoming_drivers.empty:
+        print("❌ upcoming_drivers is empty — returning None")
+        return None, None, None
+
+    # Encode drivers and teams
     le_driver = LabelEncoder()
     le_driver.fit(df['Abbreviation'].tolist() + upcoming_drivers['Abbreviation'].tolist())
 
@@ -362,9 +399,15 @@ def predict_all_positions(gp_name, upcoming_year=None):
 
     X = df[['Driver_encoded', 'Team_encoded', 'Year']]
     y = df['Position']
+
+    if len(X) < 2:
+        print("❌ Not enough data to train model — returning None")
+        return None, None, None
+
     model_rf = RandomForestRegressor(n_estimators=100, random_state=42)
     model_rf.fit(X, y)
 
+    upcoming_drivers = upcoming_drivers.copy()
     upcoming_drivers['Year'] = upcoming_year
     upcoming_drivers['Driver_encoded'] = le_driver.transform(upcoming_drivers['Abbreviation'])
     upcoming_drivers['Team_encoded'] = le_team.transform(upcoming_drivers['TeamName'])
@@ -375,13 +418,13 @@ def predict_all_positions(gp_name, upcoming_year=None):
     upcoming_drivers.sort_values('Predicted Position', inplace=True)
     upcoming_drivers.reset_index(drop=True, inplace=True)
 
-    # Simulate lap times
-    base_time = 4866.0
+    # Simulate time gaps
     upcoming_drivers['Time Gap (s)'] = [round(i * 2.5 + (i**1.1), 3) for i in range(len(upcoming_drivers))]
     upcoming_drivers['Predicted Finish Time'] = upcoming_drivers['Time Gap (s)'].apply(
         lambda t: f"+{t:.3f}s" if t > 0 else "Leader"
     )
 
+    print(f"✅ Prediction complete — {len(upcoming_drivers)} drivers predicted")
     return upcoming_drivers, actual_results, show_actual
 
 # --- Simulate Live Race Function ---
@@ -579,7 +622,8 @@ with col2:
             col_year, col_gp = st.columns(2)
 
             with col_year:
-                selected_year = st.slider("Select Year", 2021, get_latest_year(), get_latest_year())
+                MAX_AVAILABLE_YEAR = 2022  # adjust to whatever your cache actually has
+                selected_year = st.slider("Select Year", 2018, MAX_AVAILABLE_YEAR, MAX_AVAILABLE_YEAR)
 
             try:
                 schedule = fastf1.get_event_schedule(selected_year)
