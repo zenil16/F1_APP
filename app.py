@@ -312,45 +312,185 @@ def generate_f1_trivia():
 
 
 # --- Get Latest Year ---
-def get_latest_year():
-    return datetime.now().year
+@st.cache_data(show_spinner=False)
+def get_latest_available_year():
+    current_year = datetime.now().year
+    for year in range(current_year, 2017, -1):
+        try:
+            schedule = fastf1.get_event_schedule(year)
+            if schedule is not None and not schedule.empty:
+                return year
+        except Exception:
+            continue
+    return 2024
+
+@st.cache_data(show_spinner=False)
+def get_predictable_years():
+    latest_year = get_latest_available_year()
+    valid_years = []
+
+    for year in range(2018, latest_year + 1):
+        try:
+            schedule = fastf1.get_event_schedule(year)
+            if schedule is None or schedule.empty:
+                continue
+
+            valid_schedule = schedule[
+                (schedule['EventFormat'].notna()) &
+                (~schedule['EventName'].astype(str).str.contains("Testing|Test", case=False, na=False))
+            ].copy()
+
+            if not valid_schedule.empty:
+                valid_years.append(year)
+        except Exception:
+            continue
+
+    return valid_years
+
+
+@st.cache_data(show_spinner=False)
+def get_valid_schedule_for_year(year):
+    schedule = fastf1.get_event_schedule(year)
+
+    valid_schedule = schedule[
+        (schedule['EventFormat'].notna()) &
+        (~schedule['EventName'].astype(str).str.contains("Testing|Test", case=False, na=False))
+    ].copy()
+
+    return valid_schedule
+
+
+def resolve_historical_event_name(year, target_gp_name, target_location=None):
+    try:
+        schedule = get_valid_schedule_for_year(year)
+
+        if schedule.empty:
+            return None
+
+        # 1. Exact match
+        exact_match = schedule[schedule['EventName'] == target_gp_name]
+        if not exact_match.empty:
+            return exact_match.iloc[0]['EventName']
+
+        # 2. Match by location
+        if target_location:
+            loc_match = schedule[schedule['Location'] == target_location]
+            if not loc_match.empty:
+                return loc_match.iloc[0]['EventName']
+
+        # 3. Partial contains match
+        partial = schedule[
+            schedule['EventName'].astype(str).str.contains(target_gp_name.split()[0], case=False, na=False)
+        ]
+        if not partial.empty:
+            return partial.iloc[0]['EventName']
+
+    except Exception:
+        pass
+
+    return None
+
+
+@st.cache_data(show_spinner=False)
+def get_predictable_gps(year):
+    try:
+        schedule = get_valid_schedule_for_year(year)
+        if schedule.empty:
+            return [], {}
+
+        races = []
+        locations = {}
+
+        for _, row in schedule.iterrows():
+            gp_name = row['EventName']
+            gp_location = row['Location']
+
+            historical_years = list(range(max(2018, year - 3), year))
+            success_count = 0
+
+            for hist_year in historical_years:
+                resolved_name = resolve_historical_event_name(hist_year, gp_name, gp_location)
+                if not resolved_name:
+                    continue
+
+                try:
+                    session = fastf1.get_session(hist_year, resolved_name, 'R')
+                    session.load()
+                    if session.results is not None and not session.results.empty:
+                        success_count += 1
+                except Exception:
+                    continue
+
+            # Keep only races with at least 1 usable historical season
+            if success_count >= 1:
+                races.append(gp_name)
+                locations[gp_name] = gp_location
+
+        return races, locations
+
+    except Exception:
+        return [], {}
 
 # --- Prediction Function ---
-def predict_all_positions(gp_name, upcoming_year=None):
+def predict_all_positions(gp_name, upcoming_year=None, gp_location=None):
     if upcoming_year is None:
-        upcoming_year = get_latest_year()
+        upcoming_year = get_latest_available_year()
 
     historical_years = list(range(max(2018, upcoming_year - 3), upcoming_year))
     all_races = []
 
     for year in historical_years:
+        resolved_name = resolve_historical_event_name(year, gp_name, gp_location)
+        if not resolved_name:
+            continue
+
         try:
-            session = fastf1.get_session(year, gp_name, 'R')
+            session = fastf1.get_session(year, resolved_name, 'R')
             session.load()
+
+            if session.results is None or session.results.empty:
+                continue
+
             results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
             results['Year'] = year
-            all_races.append(results)
+            results = results.dropna(subset=['Abbreviation', 'Position', 'TeamName'])
+
+            if not results.empty:
+                all_races.append(results)
+
         except Exception as e:
-            print(f"Skipping {gp_name} {year}: {e}")
+            print(f"Skipping {gp_name} ({resolved_name}) in {year}: {e}")
             continue
 
     if not all_races:
         return None, None, None
 
     df = pd.concat(all_races, ignore_index=True)
-    df = df[['Abbreviation', 'Position', 'TeamName', 'Year']].dropna()
+
+    if df.empty:
+        return None, None, None
+
+    df['Position'] = pd.to_numeric(df['Position'], errors='coerce')
+    df = df.dropna(subset=['Position'])
 
     if df.empty:
         return None, None, None
 
     try:
-        upcoming_session = fastf1.get_session(upcoming_year, gp_name, 'R')
+        resolved_upcoming_name = resolve_historical_event_name(upcoming_year, gp_name, gp_location) or gp_name
+
+        upcoming_session = fastf1.get_session(upcoming_year, resolved_upcoming_name, 'R')
         upcoming_session.load()
-        upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].drop_duplicates().copy()
-        actual_results = upcoming_session.results[['Abbreviation', 'Position']].copy()
-        show_actual = True
-    except Exception as e:
-        latest_year = df['Year'].max()
+
+        if upcoming_session.results is not None and not upcoming_session.results.empty:
+            upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].drop_duplicates().copy()
+            actual_results = upcoming_session.results[['Abbreviation', 'Position']].copy()
+            show_actual = True
+        else:
+            raise ValueError("No results in upcoming session")
+
+    except Exception:
+        latest_year = int(df['Year'].max())
         upcoming_drivers = df[df['Year'] == latest_year][['Abbreviation', 'TeamName']].drop_duplicates().copy()
         actual_results = None
         show_actual = False
@@ -359,20 +499,16 @@ def predict_all_positions(gp_name, upcoming_year=None):
         return None, None, None
 
     le_driver = LabelEncoder()
-    le_driver.fit(list(df['Abbreviation']) + list(upcoming_drivers['Abbreviation']))
+    le_driver.fit(list(pd.concat([df['Abbreviation'], upcoming_drivers['Abbreviation']]).astype(str).unique()))
 
     le_team = LabelEncoder()
-    le_team.fit(list(df['TeamName']) + list(upcoming_drivers['TeamName']))
+    le_team.fit(list(pd.concat([df['TeamName'], upcoming_drivers['TeamName']]).astype(str).unique()))
 
-    df['Driver_encoded'] = le_driver.transform(df['Abbreviation'])
-    df['Team_encoded'] = le_team.transform(df['TeamName'])
+    df['Driver_encoded'] = le_driver.transform(df['Abbreviation'].astype(str))
+    df['Team_encoded'] = le_team.transform(df['TeamName'].astype(str))
 
     X = df[['Driver_encoded', 'Team_encoded', 'Year']]
-    y = pd.to_numeric(df['Position'], errors='coerce')
-
-    valid_mask = y.notna()
-    X = X[valid_mask]
-    y = y[valid_mask]
+    y = df['Position']
 
     if X.empty or y.empty:
         return None, None, None
@@ -381,8 +517,8 @@ def predict_all_positions(gp_name, upcoming_year=None):
     model_rf.fit(X, y)
 
     upcoming_drivers['Year'] = upcoming_year
-    upcoming_drivers['Driver_encoded'] = le_driver.transform(upcoming_drivers['Abbreviation'])
-    upcoming_drivers['Team_encoded'] = le_team.transform(upcoming_drivers['TeamName'])
+    upcoming_drivers['Driver_encoded'] = le_driver.transform(upcoming_drivers['Abbreviation'].astype(str))
+    upcoming_drivers['Team_encoded'] = le_team.transform(upcoming_drivers['TeamName'].astype(str))
 
     X_upcoming = upcoming_drivers[['Driver_encoded', 'Team_encoded', 'Year']]
     upcoming_drivers['Predicted Position'] = model_rf.predict(X_upcoming)
@@ -592,41 +728,38 @@ with col2:
             col_year, col_gp = st.columns(2)
 
             with col_year:
-                available_years = list(range(2018, get_latest_year() + 1))
-                selected_year = st.selectbox("Select Year", available_years, index=len(available_years) - 1)
-
-            try:
-                schedule = fastf1.get_event_schedule(selected_year)
-
-                valid_schedule = schedule[
-                    (schedule['EventFormat'].notna()) &
-                    (~schedule['EventName'].str.contains("Testing|Test", case=False, na=False))
-                ].copy()
+                available_years = get_predictable_years()
+                default_index = len(available_years) - 1 if available_years else 0
+                selected_year = st.selectbox("Select Year", available_years, index=default_index)
             
-                races = valid_schedule['EventName'].dropna().tolist()
-                event_locations = dict(zip(valid_schedule['EventName'], valid_schedule['Location']))
+            try:
+                races, event_locations = get_predictable_gps(selected_year)
             
                 if not races:
-                    st.warning(f"No race schedule available for {selected_year}.")
+                    st.warning(f"No predictable races available for {selected_year}.")
                     selected_gp = None
+                    selected_gp_location = None
                 else:
                     with col_gp:
                         selected_gp = st.selectbox("Choose a Grand Prix", races)
             
+                    selected_gp_location = event_locations.get(selected_gp)
+            
                     if selected_gp:
                         st.markdown(f"""
                             <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
-                                <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {event_locations.get(selected_gp, 'Unknown')}</p>
+                                <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {selected_gp_location or 'Unknown'}</p>
                             </div>
                         """, unsafe_allow_html=True)
-
+            
             except Exception as e:
                 st.error(f"Error loading race schedule: {e}")
                 selected_gp = None
+                selected_gp_location = None
 
             if selected_gp and st.button("Run Prediction", key="predict_button"):
                 with st.spinner("Running prediction model..."):
-                    predictions, actual, has_real = predict_all_positions(selected_gp, selected_year)
+                    predictions, actual, has_real = predict_all_positions(selected_gp, selected_year, selected_gp_location)
 
                     if predictions is None or predictions.empty:
                         st.error(f"No usable race data found for {selected_gp} in {selected_year}. Try another year or GP.")
