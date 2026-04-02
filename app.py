@@ -317,51 +317,66 @@ def get_latest_year():
 
 # --- Prediction Function ---
 def predict_all_positions(gp_name, upcoming_year=None):
-    current_year = get_latest_year()
     if upcoming_year is None:
-        upcoming_year = current_year
+        upcoming_year = get_latest_year()
 
-    historical_years = list(range(current_year - 3, current_year))
+    historical_years = list(range(max(2018, upcoming_year - 3), upcoming_year))
     all_races = []
 
     for year in historical_years:
         try:
             session = fastf1.get_session(year, gp_name, 'R')
             session.load()
-            results = session.results[['Abbreviation', 'Position', 'TeamName']]
+            results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
             results['Year'] = year
             all_races.append(results)
-        except:
+        except Exception as e:
+            print(f"Skipping {gp_name} {year}: {e}")
             continue
 
     if not all_races:
         return None, None, None
 
-    df = pd.concat(all_races)
-    df.dropna(inplace=True)
+    df = pd.concat(all_races, ignore_index=True)
+    df = df[['Abbreviation', 'Position', 'TeamName', 'Year']].dropna()
+
+    if df.empty:
+        return None, None, None
 
     try:
         upcoming_session = fastf1.get_session(upcoming_year, gp_name, 'R')
         upcoming_session.load()
-        upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].drop_duplicates()
-        actual_results = upcoming_session.results[['Abbreviation', 'Position']]
+        upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].drop_duplicates().copy()
+        actual_results = upcoming_session.results[['Abbreviation', 'Position']].copy()
         show_actual = True
-    except:
-        upcoming_drivers = df[df['Year'] == max(df['Year'])][['Abbreviation', 'TeamName']].drop_duplicates()
+    except Exception as e:
+        latest_year = df['Year'].max()
+        upcoming_drivers = df[df['Year'] == latest_year][['Abbreviation', 'TeamName']].drop_duplicates().copy()
         actual_results = None
         show_actual = False
 
+    if upcoming_drivers.empty:
+        return None, None, None
+
     le_driver = LabelEncoder()
-    le_driver.fit(df['Abbreviation'].tolist() + upcoming_drivers['Abbreviation'].tolist())
+    le_driver.fit(list(df['Abbreviation']) + list(upcoming_drivers['Abbreviation']))
 
     le_team = LabelEncoder()
-    le_team.fit(df['TeamName'].tolist() + upcoming_drivers['TeamName'].tolist())
+    le_team.fit(list(df['TeamName']) + list(upcoming_drivers['TeamName']))
 
     df['Driver_encoded'] = le_driver.transform(df['Abbreviation'])
     df['Team_encoded'] = le_team.transform(df['TeamName'])
 
     X = df[['Driver_encoded', 'Team_encoded', 'Year']]
-    y = df['Position']
+    y = pd.to_numeric(df['Position'], errors='coerce')
+
+    valid_mask = y.notna()
+    X = X[valid_mask]
+    y = y[valid_mask]
+
+    if X.empty or y.empty:
+        return None, None, None
+
     model_rf = RandomForestRegressor(n_estimators=100, random_state=42)
     model_rf.fit(X, y)
 
@@ -375,9 +390,7 @@ def predict_all_positions(gp_name, upcoming_year=None):
     upcoming_drivers.sort_values('Predicted Position', inplace=True)
     upcoming_drivers.reset_index(drop=True, inplace=True)
 
-    # Simulate lap times
-    base_time = 4866.0
-    upcoming_drivers['Time Gap (s)'] = [round(i * 2.5 + (i**1.1), 3) for i in range(len(upcoming_drivers))]
+    upcoming_drivers['Time Gap (s)'] = [round(i * 2.5 + (i ** 1.1), 3) for i in range(len(upcoming_drivers))]
     upcoming_drivers['Predicted Finish Time'] = upcoming_drivers['Time Gap (s)'].apply(
         lambda t: f"+{t:.3f}s" if t > 0 else "Leader"
     )
@@ -579,25 +592,34 @@ with col2:
             col_year, col_gp = st.columns(2)
 
             with col_year:
-                selected_year = st.slider("Select Year", 2021, get_latest_year(), get_latest_year())
+                available_years = list(range(2018, get_latest_year() + 1))
+                selected_year = st.selectbox("Select Year", available_years, index=len(available_years) - 1)
 
             try:
                 schedule = fastf1.get_event_schedule(selected_year)
-                races = schedule[
-                    (schedule['EventFormat'].notna()) & (~schedule['EventName'].str.contains("Testing|Test", case=False))
-                ]['EventName'].tolist()
 
-                event_locations = dict(zip(schedule['EventName'], schedule['Location']))
+                valid_schedule = schedule[
+                    (schedule['EventFormat'].notna()) &
+                    (~schedule['EventName'].str.contains("Testing|Test", case=False, na=False))
+                ].copy()
+            
+                races = valid_schedule['EventName'].dropna().tolist()
+                event_locations = dict(zip(valid_schedule['EventName'], valid_schedule['Location']))
+            
+                if not races:
+                    st.warning(f"No race schedule available for {selected_year}.")
+                    selected_gp = None
+                else:
+                    with col_gp:
+                        selected_gp = st.selectbox("Choose a Grand Prix", races)
+            
+                    if selected_gp:
+                        st.markdown(f"""
+                            <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
+                                <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {event_locations.get(selected_gp, 'Unknown')}</p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
-                with col_gp:
-                    selected_gp = st.selectbox("Choose a Grand Prix", races)
-
-                if selected_gp:
-                    st.markdown(f"""
-                        <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
-                            <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {event_locations[selected_gp]}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Error loading race schedule: {e}")
                 selected_gp = None
@@ -606,7 +628,9 @@ with col2:
                 with st.spinner("Running prediction model..."):
                     predictions, actual, has_real = predict_all_positions(selected_gp, selected_year)
 
-                    if predictions is not None:
+                    if predictions is None or predictions.empty:
+                        st.error(f"No usable race data found for {selected_gp} in {selected_year}. Try another year or GP.")
+                    else:
                         st.success("✅ Prediction complete!")
 
                         # Store in session state for live simulation
