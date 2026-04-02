@@ -744,8 +744,6 @@ with col2:
 
                             plt.tight_layout()
                             st.pyplot(fig)
-                    else:
-                        st.error("Unable to generate predictions. Not enough historical data.")
 
     with tab2:
         st.markdown(
