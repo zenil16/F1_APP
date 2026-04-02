@@ -20,14 +20,6 @@ if not os.path.exists('cache'):
     os.makedirs('cache')
 
 fastf1.Cache.enable_cache('cache')
-# ✅ Temporary debug block
-for year in range(2018, 2027):
-    try:
-        schedule = fastf1.get_event_schedule(year)
-        print(f"✅ {year}: {len(schedule)} events")
-    except Exception as e:
-        print(f"❌ {year}: no data — {str(e)}")
-
 dotenv.load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=api_key)
@@ -41,214 +33,121 @@ st.set_page_config(
 )
 
 # --- Styling ---
-def get_base64_of_image(image_url):
-    with open(image_url, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
-
-def set_background(image_file):
-    """Set the background image of the app."""
-    try:
-        with open(image_file, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode()
-
-        st.markdown(
-            f"""
-            <style>
-            .stApp {{
-                background-image: url("data:image/png;base64,{encoded_string}");
-                background-size: cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                background-attachment: fixed;
-            }}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-    except:
-        # If the image doesn't exist, use a CSS gradient
-        st.markdown(
-            """
-            <style>
-            .stApp {
-                background: linear-gradient(135deg, #1e1e1e, #2d2d2d, #1e1e1e);
-                background-size: 400% 400%;
-                animation: gradient 15s ease infinite;
-            }
-            @keyframes gradient {
-                0% {background-position: 0% 50%;}
-                50% {background-position: 100% 50%;}
-                100% {background-position: 0% 50%;}
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-
-# Try to set the background image (if file exists)
-try:
-    set_background("f1_background.jpg")
-except:
-    # Use CSS gradient background if image doesn't exist
-    st.markdown(
-        """
-        <style>
-        .stApp {
-            background: linear-gradient(135deg, #1e1e1e, #2d2d2d, #1e1e1e);
-            background-size: 400% 400%;
-            animation: gradient 15s ease infinite;
-        }
-        @keyframes gradient {
-            0% {background-position: 0% 50%;}
-            50% {background-position: 100% 50%;}
-            100% {background-position: 0% 50%;}
-        }
-        .block-container {
-            background-color: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 20px;
-            margin: 10px;
-        }
-        .css-18e3th9 {
-            padding-top: 0rem;
-            padding-bottom: 0rem;
-        }
-        h1, h2, h3, h4 {
-            color: #f2f2f2;
-            font-family: 'Racing Sans One', 'Helvetica', sans-serif;
-        }
-        .stButton>button {
-            background-color: #e10600;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            padding: 10px 15px;
-            font-weight: bold;
-            transition: all 0.3s;
-        }
-        .stButton>button:hover {
-            background-color: #b30500;
-            transform: scale(1.05);
-        }
-        .chat-container {
-            background-color: rgba(30, 30, 30, 0.7);
-            border-radius: 10px;
-            padding: 10px;
-            margin-bottom: 10px;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        .user-message {
-            background-color: rgba(14, 17, 23, 0.8);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 15px 15px 0 15px;
-            margin: 5px 0;
-        }
-        .bot-message {
-            background-color: rgba(225, 6, 0, 0.8);
-            color: white;
-            padding: 8px 12px;
-            border-radius: 15px 15px 15px 0;
-            margin: 5px 0;
-        }
-        .prediction-container {
-            background-color: rgba(30, 30, 30, 0.7);
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 10px;
-        }
-        .trivia-question {
-            background-color: rgba(0, 0, 0, 0.6);
-            padding: 15px;
-            border-radius: 10px;
-            margin: 10px 0;
-            border-left: 4px solid #e10600;
-        }
-        .trivia-answer {
-            background-color: rgba(0, 100, 0, 0.5);
-            padding: 10px;
-            border-radius: 5px;
-            margin-top: 5px;
-        }
-        .live-tracking {
-            background-color: rgba(0, 0, 0, 0.7);
-            border-radius: 10px;
-            padding: 10px;
-            margin-top: 10px;
-            color: white;
-        }
-        .driver-card {
-            background: linear-gradient(145deg, rgba(30,30,30,0.8), rgba(60,60,60,0.8));
-            border-radius: 8px;
-            padding: 8px;
-            margin: 5px 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: transform 0.2s;
-        }
-        .driver-card:hover {
-            transform: translateX(5px);
-        }
-        .position {
-            font-weight: bold;
-            font-size: 1.2rem;
-            color: #e10600;
-        }
-        .driver-name {
-            font-weight: bold;
-        }
-        .driver-time {
-            color: #cccccc;
-            font-family: monospace;
-        }
-        table {
-            color: white !important;
-            background-color: rgba(0, 0, 0, 0.5) !important;
-        }
-        .dataframe {
-            color: white !important;
-        }
-        .st-emotion-cache-1y4p8pa {
-            border: 1px solid #333 !important;
-            border-radius: 12px !important;
-            background-color: rgba(0, 0, 0, 0.7) !important;
-            color: white !important;
-        }
-        .st-emotion-cache-1y4p8pa th {
-            background-color: rgba(225, 6, 0, 0.8) !important;
-            color: white !important;
-        }
-        .st-emotion-cache-1y4p8pa td {
-            background-color: rgba(30, 30, 30, 0.7) !important;
-            color: white !important;
-        }
-        /* Tab styling */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px;
-        }
-        .stTabs [data-baseweb="tab"] {
-            background-color: rgba(60, 60, 60, 0.5);
-            border-radius: 5px 5px 0 0;
-            padding: 10px 20px;
-            border: none;
-        }
-        .stTabs [aria-selected="true"] {
-            background-color: rgba(225, 6, 0, 0.8) !important;
-            color: white !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background: linear-gradient(135deg, #1e1e1e, #2d2d2d, #1e1e1e);
+        background-size: 400% 400%;
+        animation: gradient 15s ease infinite;
+    }
+    @keyframes gradient {
+        0% {background-position: 0% 50%;}
+        50% {background-position: 100% 50%;}
+        100% {background-position: 0% 50%;}
+    }
+    .block-container {
+        background-color: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 20px;
+        margin: 10px;
+    }
+    h1, h2, h3, h4 {
+        color: #f2f2f2;
+        font-family: 'Helvetica', sans-serif;
+    }
+    .stButton>button {
+        background-color: #e10600;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        padding: 10px 15px;
+        font-weight: bold;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        background-color: #b30500;
+        transform: scale(1.05);
+    }
+    .chat-container {
+        background-color: rgba(30, 30, 30, 0.7);
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 10px;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    .user-message {
+        background-color: rgba(14, 17, 23, 0.8);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 15px 15px 0 15px;
+        margin: 5px 0;
+    }
+    .bot-message {
+        background-color: rgba(225, 6, 0, 0.8);
+        color: white;
+        padding: 8px 12px;
+        border-radius: 15px 15px 15px 0;
+        margin: 5px 0;
+    }
+    .trivia-question {
+        background-color: rgba(0, 0, 0, 0.6);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+        border-left: 4px solid #e10600;
+    }
+    .trivia-answer {
+        background-color: rgba(0, 100, 0, 0.5);
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 5px;
+    }
+    .driver-card {
+        background: linear-gradient(145deg, rgba(30,30,30,0.8), rgba(60,60,60,0.8));
+        border-radius: 8px;
+        padding: 8px;
+        margin: 5px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .position {
+        font-weight: bold;
+        font-size: 1.2rem;
+        color: #e10600;
+    }
+    .driver-name {
+        font-weight: bold;
+        color: white;
+    }
+    .driver-time {
+        color: #cccccc;
+        font-family: monospace;
+    }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] {
+        background-color: rgba(60, 60, 60, 0.5);
+        border-radius: 5px 5px 0 0;
+        padding: 10px 20px;
+        border: none;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: rgba(225, 6, 0, 0.8) !important;
+        color: white !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # --- Gemini Response Function ---
-def response(messages):
+def get_ai_response(messages):
     try:
-        response = model.generate_content(messages)
-        return response
+        resp = model.generate_content(messages)
+        return resp
     except Exception as e:
         return f"Error: {str(e)}"
 
@@ -262,7 +161,6 @@ def fetch_conversation_history():
 
 # --- Trivia Question Generator ---
 def generate_f1_trivia():
-    """Generate 5 clean Formula 1 trivia questions and answers."""
     trivia_prompt = """
     Generate exactly 5 unique Formula 1 trivia questions and very short, direct answers.
     Answer MUST be very short (driver name, team, year, number, etc.) without explanation.
@@ -271,146 +169,224 @@ def generate_f1_trivia():
     ```json
     [
         {"question": "Who won the 2021 F1 World Championship?", "answer": "Max Verstappen"},
-        {"question": "Which team has the most Constructors' Championships?", "answer": "Ferrari"}
+        {"question": "Which team has the most Constructors Championships?", "answer": "Ferrari"}
     ]
     ```
     Only include short, direct answers. No explanations, no extra sentences.
     """
-
     try:
-        response = model.generate_content(trivia_prompt)
-
-        import json
-        import re
-
-        # Extract JSON part safely
-        text = response.text
+        resp = model.generate_content(trivia_prompt)
+        import json, re
+        text = resp.text
         json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
-
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            # If no proper ```json ``` block found, treat full text as JSON
-            json_str = text
-
+        json_str = json_match.group(1) if json_match else text
         json_str = json_str.replace('\\n', '').replace('\\', '')
-
-        # Parse JSON
         questions = json.loads(json_str)
-
-        # --- Clean the answers to be SHORT only ---
         for qa in questions:
             if 'answer' in qa:
-                # Remove if there are sentences or too much text
                 qa['answer'] = qa['answer'].split('.')[0].strip()
-
         return questions
-
     except Exception as e:
         st.error(f"Trivia generation error: {str(e)}")
-
-        # --- Safe fallback trivia ---
         return [
             {"question": "Who holds the most F1 World Championships?", "answer": "Lewis Hamilton"},
             {"question": "Which team is nicknamed the Silver Arrows?", "answer": "Mercedes"},
             {"question": "Which country hosts the Monaco Grand Prix?", "answer": "Monaco"},
-            {"question": "Who was Ferrari's first F1 world champion?", "answer": "Alberto Ascari"},
+            {"question": "Who was Ferraris first F1 world champion?", "answer": "Alberto Ascari"},
             {"question": "What tire supplier is used in Formula 1?", "answer": "Pirelli"}
         ]
-
 
 # --- Get Latest Year ---
 def get_latest_year():
     return datetime.now().year
 
-# --- Prediction Function ---
-def predict_all_positions(gp_name, upcoming_year=None):
-    current_year = get_latest_year()
-    if upcoming_year is None:
-        upcoming_year = current_year
+# --- Team Colors Dictionary ---
+team_colors = {
+    'Red Bull Racing': '#0600EF',
+    'Red Bull': '#0600EF',
+    'Mercedes': '#00D2BE',
+    'Ferrari': '#DC0000',
+    'McLaren': '#FF8700',
+    'Alpine': '#0090FF',
+    'AlphaTauri': '#2B4562',
+    'RB F1 Team': '#2B4562',
+    'Aston Martin': '#006F62',
+    'Williams': '#005AFF',
+    'Alfa Romeo': '#900000',
+    'Haas F1 Team': '#FFFFFF',
+    'Haas': '#FFFFFF',
+    'Racing Point': '#F596C8',
+    'Renault': '#FFF500',
+    'Toro Rosso': '#469BFF',
+    'Force India': '#F596C8',
+    'Sauber': '#9B0000',
+    'Kick Sauber': '#00CF46',
+    'Manor': '#323232',
+    'Caterham': '#10518F',
+    'Lotus': '#FFB800',
+    'Marussia': '#6E0000',
+    'HRT': '#333333',
+}
 
-    # Try a wider range and collect whatever years actually have data
-    MAX_HISTORY = 5
-    all_races = []
-    years_with_data = []
+# ─────────────────────────────────────────────
+# SMART DATA FETCHING
+# ─────────────────────────────────────────────
 
-    for year in range(current_year - MAX_HISTORY, current_year + 1):
+@st.cache_data(show_spinner=False)
+def discover_available_years():
+    """
+    Scan from 2018 to current year and return a list of years
+    for which FastF1 can successfully fetch the event schedule.
+    Result is cached so it only runs once per session.
+    """
+    available = []
+    current = get_latest_year()
+    for yr in range(2018, current + 1):
         try:
-            session = fastf1.get_session(year, gp_name, 'R')
-            session.load()
-            results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
-            results['Year'] = year
-            all_races.append(results)
-            years_with_data.append(year)
-            print(f"✅ Loaded {gp_name} {year}")
-        except Exception as e:
-            print(f"❌ Could not load {gp_name} {year}: {str(e)}")
+            schedule = fastf1.get_event_schedule(yr)
+            if schedule is not None and len(schedule) > 0:
+                available.append(yr)
+        except Exception:
             continue
+    return available
 
+
+@st.cache_data(show_spinner=False)
+def get_schedule_for_year(year):
+    """Return the race schedule for a given year, cached."""
+    try:
+        schedule = fastf1.get_event_schedule(year)
+        races = schedule[
+            (schedule['EventFormat'].notna()) &
+            (~schedule['EventName'].str.contains("Testing|Test", case=False, na=False))
+        ]
+        return races
+    except Exception:
+        return None
+
+
+def load_race_session(year, gp_name):
+    """Try to load a race session. Returns (results_df, error_string)."""
+    try:
+        session = fastf1.get_session(year, gp_name, 'R')
+        session.load(telemetry=False, weather=False, messages=False)
+        results = session.results[['Abbreviation', 'Position', 'TeamName']].copy()
+        results['Year'] = year
+        results = results.dropna(subset=['Abbreviation', 'Position', 'TeamName'])
+        results['Position'] = pd.to_numeric(results['Position'], errors='coerce')
+        results = results.dropna(subset=['Position'])
+        return results, None
+    except Exception as e:
+        return None, str(e)
+
+
+def predict_all_positions(gp_name, upcoming_year, available_years):
+    """
+    Build a Random Forest model from all available historical data
+    for gp_name, then predict the finish order for upcoming_year.
+
+    available_years: list of years confirmed to have schedule data.
+    """
+
+    # ── 1. Collect historical race data ──────────────────────────────
+    all_races = []
+    years_loaded = []
+
+    # Use every available year except the one we're predicting
+    history_years = [y for y in available_years if y != upcoming_year]
+
+    status_placeholder = st.empty()
+    for year in sorted(history_years):
+        status_placeholder.info(f"⏳ Loading historical data: {gp_name} {year}…")
+        results, err = load_race_session(year, gp_name)
+        if results is not None and len(results) > 0:
+            all_races.append(results)
+            years_loaded.append(year)
+            print(f"✅ Loaded {gp_name} {year} — {len(results)} drivers")
+        else:
+            print(f"❌ Skipped {gp_name} {year}: {err}")
+
+    status_placeholder.empty()
+
+    # ── 2. Handle no historical data at all ──────────────────────────
     if not all_races:
-        print("❌ No race data found at all — returning None")
+        st.warning(f"⚠️ No historical race data found for **{gp_name}** in any available year ({available_years}). Try a different Grand Prix.")
         return None, None, None
 
-    df = pd.concat(all_races)
+    df = pd.concat(all_races, ignore_index=True)
     df.dropna(inplace=True)
 
     if df.empty:
-        print("❌ DataFrame is empty after dropna — returning None")
+        st.warning("⚠️ Historical data is empty after cleaning. Try a different Grand Prix.")
         return None, None, None
 
-    # Use the most recent year that actually has data
-    latest_available_year = max(years_with_data)
-    print(f"✅ Latest available year: {latest_available_year}")
-    print(f"✅ Years with data: {years_with_data}")
+    latest_hist_year = max(years_loaded)
+    print(f"✅ Historical data ready — years: {years_loaded}, rows: {len(df)}")
 
-    try:
-        upcoming_session = fastf1.get_session(upcoming_year, gp_name, 'R')
-        upcoming_session.load()
-        upcoming_drivers = upcoming_session.results[['Abbreviation', 'TeamName']].drop_duplicates()
-        actual_results = upcoming_session.results[['Abbreviation', 'Position']]
-        show_actual = True
-        print(f"✅ Loaded upcoming session for {upcoming_year}")
-    except Exception as e:
-        print(f"❌ Could not load upcoming session {upcoming_year}: {str(e)}")
-        # Fall back to the latest year that actually loaded successfully
-        latest_df = df[df['Year'] == latest_available_year][['Abbreviation', 'TeamName']].drop_duplicates()
+    # ── 3. Try to load the target year's actual results ───────────────
+    actual_results = None
+    show_actual = False
 
-        if latest_df.empty:
-            print("❌ latest_df is empty — returning None")
-            return None, None, None
+    if upcoming_year in available_years:
+        status_placeholder2 = st.empty()
+        status_placeholder2.info(f"⏳ Loading {gp_name} {upcoming_year} results…")
+        target_results, err = load_race_session(upcoming_year, gp_name)
+        status_placeholder2.empty()
 
-        upcoming_drivers = latest_df
-        actual_results = None
-        show_actual = False
+        if target_results is not None and len(target_results) > 0:
+            actual_results = target_results[['Abbreviation', 'Position']]
+            upcoming_drivers = target_results[['Abbreviation', 'TeamName']].drop_duplicates()
+            show_actual = True
+            print(f"✅ Loaded actual results for {upcoming_year}")
+        else:
+            print(f"❌ Could not load {upcoming_year} session: {err}")
+            # Fall through to use latest historical year's drivers
+            upcoming_drivers = (
+                df[df['Year'] == latest_hist_year][['Abbreviation', 'TeamName']]
+                .drop_duplicates()
+            )
+    else:
+        # upcoming_year not in schedule data — use latest historical drivers
+        upcoming_drivers = (
+            df[df['Year'] == latest_hist_year][['Abbreviation', 'TeamName']]
+            .drop_duplicates()
+        )
 
     if upcoming_drivers.empty:
-        print("❌ upcoming_drivers is empty — returning None")
+        st.warning("⚠️ Could not determine the driver lineup. Try a different year or Grand Prix.")
         return None, None, None
 
-    # Encode drivers and teams
-    le_driver = LabelEncoder()
-    le_driver.fit(df['Abbreviation'].tolist() + upcoming_drivers['Abbreviation'].tolist())
+    # ── 4. Encode & train ─────────────────────────────────────────────
+    all_drivers = list(set(df['Abbreviation'].tolist() + upcoming_drivers['Abbreviation'].tolist()))
+    all_teams   = list(set(df['TeamName'].tolist()    + upcoming_drivers['TeamName'].tolist()))
 
-    le_team = LabelEncoder()
-    le_team.fit(df['TeamName'].tolist() + upcoming_drivers['TeamName'].tolist())
+    le_driver = LabelEncoder().fit(all_drivers)
+    le_team   = LabelEncoder().fit(all_teams)
 
     df['Driver_encoded'] = le_driver.transform(df['Abbreviation'])
-    df['Team_encoded'] = le_team.transform(df['TeamName'])
+    df['Team_encoded']   = le_team.transform(df['TeamName'])
 
     X = df[['Driver_encoded', 'Team_encoded', 'Year']]
     y = df['Position']
 
-    if len(X) < 2:
-        print("❌ Not enough data to train model — returning None")
+    if len(X) < 3:
+        st.warning("⚠️ Not enough data rows to train a model. Try a Grand Prix with more history.")
         return None, None, None
 
-    model_rf = RandomForestRegressor(n_estimators=100, random_state=42)
+    model_rf = RandomForestRegressor(n_estimators=200, random_state=42)
     model_rf.fit(X, y)
 
+    # ── 5. Predict ────────────────────────────────────────────────────
     upcoming_drivers = upcoming_drivers.copy()
     upcoming_drivers['Year'] = upcoming_year
-    upcoming_drivers['Driver_encoded'] = le_driver.transform(upcoming_drivers['Abbreviation'])
-    upcoming_drivers['Team_encoded'] = le_team.transform(upcoming_drivers['TeamName'])
+
+    # Handle drivers/teams not seen during training (new entrants)
+    def safe_transform(le, values):
+        known = set(le.classes_)
+        return [le.transform([v])[0] if v in known else 0 for v in values]
+
+    upcoming_drivers['Driver_encoded'] = safe_transform(le_driver, upcoming_drivers['Abbreviation'])
+    upcoming_drivers['Team_encoded']   = safe_transform(le_team,   upcoming_drivers['TeamName'])
 
     X_upcoming = upcoming_drivers[['Driver_encoded', 'Team_encoded', 'Year']]
     upcoming_drivers['Predicted Position'] = model_rf.predict(X_upcoming)
@@ -418,95 +394,52 @@ def predict_all_positions(gp_name, upcoming_year=None):
     upcoming_drivers.sort_values('Predicted Position', inplace=True)
     upcoming_drivers.reset_index(drop=True, inplace=True)
 
-    # Simulate time gaps
-    upcoming_drivers['Time Gap (s)'] = [round(i * 2.5 + (i**1.1), 3) for i in range(len(upcoming_drivers))]
+    # ── 6. Simulate time gaps ─────────────────────────────────────────
+    upcoming_drivers['Time Gap (s)'] = [
+        round(i * 2.5 + (i ** 1.1), 3) for i in range(len(upcoming_drivers))
+    ]
     upcoming_drivers['Predicted Finish Time'] = upcoming_drivers['Time Gap (s)'].apply(
-        lambda t: f"+{t:.3f}s" if t > 0 else "Leader"
+        lambda t: "Leader" if t == 0 else f"+{t:.3f}s"
     )
 
-    print(f"✅ Prediction complete — {len(upcoming_drivers)} drivers predicted")
+    print(f"✅ Prediction complete — {len(upcoming_drivers)} drivers")
     return upcoming_drivers, actual_results, show_actual
+
 
 # --- Simulate Live Race Function ---
 def simulate_live_race(drivers_df):
-    """Simulate a live race with changing positions"""
     if 'race_lap' not in st.session_state:
         st.session_state.race_lap = 1
         st.session_state.race_data = drivers_df.copy()
         st.session_state.race_data['Current Gap'] = st.session_state.race_data['Time Gap (s)']
 
-    # Update positions based on random events
     if st.session_state.race_lap > 1:
-        # Randomly select drivers who might have position changes
         n_drivers = len(st.session_state.race_data)
         overtake_chance = np.random.random(n_drivers)
-
         for i in range(1, n_drivers):
-            # 15% chance of position change
-            if overtake_chance[i] < 0.15:
-                # Only allowing to overtake the driver ahead
-                if i > 0:
-                    # Swap positions
-                    temp_gap = st.session_state.race_data.iloc[i-1]['Current Gap']
-                    st.session_state.race_data.iloc[i-1, st.session_state.race_data.columns.get_loc('Current Gap')] = \
-                        st.session_state.race_data.iloc[i]['Current Gap']
-                    st.session_state.race_data.iloc[i, st.session_state.race_data.columns.get_loc('Current Gap')] = temp_gap
+            if overtake_chance[i] < 0.15 and i > 0:
+                temp_gap = st.session_state.race_data.iloc[i-1]['Current Gap']
+                st.session_state.race_data.iloc[i-1, st.session_state.race_data.columns.get_loc('Current Gap')] = \
+                    st.session_state.race_data.iloc[i]['Current Gap']
+                st.session_state.race_data.iloc[i, st.session_state.race_data.columns.get_loc('Current Gap')] = temp_gap
 
-    # Sort by current gap
     st.session_state.race_data = st.session_state.race_data.sort_values('Current Gap')
-
-    # Update lap counter
     st.session_state.race_lap += 1
-
     return st.session_state.race_data, st.session_state.race_lap
 
-# --- Team Colors Dictionary ---
-team_colors = {
-    'Red Bull': '#0600EF',
-    'Mercedes': '#00D2BE',
-    'Ferrari': '#DC0000',
-    'McLaren': '#FF8700',
-    'Alpine': '#0090FF',
-    'AlphaTauri': '#2B4562',
-    'Aston Martin': '#006F62',
-    'Williams': '#005AFF',
-    'Alfa Romeo': '#900000',
-    'Haas F1 Team': '#FFFFFF',
-    'Racing Point': '#F596C8',
-    'Renault': '#FFF500',
-    'Toro Rosso': '#469BFF',
-    'Force India': '#F596C8',
-    'Sauber': '#9B0000',
-    'Manor': '#323232',
-    'Caterham': '#10518F',
-    'Lotus': '#FFB800',
-    'Marussia': '#6E0000',
-    'HRT': '#333333',
-    'Jaguar': '#006F62',
-    'Jordan': '#EFC600',
-    'BAR': '#B26500',
-    'Arrows': '#FF8700',
-    'Brawn GP': '#B5B5B5'
-}
 
-# --- Commentary Generation Function ---
+# --- Commentary Generation ---
 def generate_race_commentary(lap_number, position_data, total_laps):
-    """Generate AI commentary for the current race situation"""
     try:
-        # Create a prompt for the AI based on the current race situation
         leader = position_data.iloc[0]['Abbreviation']
         second_place = position_data.iloc[1]['Abbreviation'] if len(position_data) > 1 else "N/A"
         gap = position_data.iloc[1]['Current Gap'] if len(position_data) > 1 else 0
-
-        # Calculate race progress
         race_progress = (lap_number / total_laps) * 100
 
-        # Find if there were any position changes
         position_changes = []
         if 'previous_positions' in st.session_state and lap_number > 1:
             current_positions = position_data['Abbreviation'].tolist()
             prev_positions = st.session_state.previous_positions
-
             for i, driver in enumerate(current_positions):
                 if driver in prev_positions:
                     prev_idx = prev_positions.index(driver)
@@ -516,105 +449,112 @@ def generate_race_commentary(lap_number, position_data, total_laps):
                         else:
                             position_changes.append(f"{driver} lost {i - prev_idx} position(s)")
 
-        # Store current positions for next comparison
         st.session_state.previous_positions = position_data['Abbreviation'].tolist()
 
-        # Generate commentary prompt
         commentary_prompt = f"""
         Generate a brief, exciting F1 commentary for lap {lap_number} of {total_laps} ({race_progress:.1f}% complete). Current race situation:
         - Current leader: {leader}
         - Second place: {second_place}
         - Gap between them: {gap:.2f} seconds
-
         {"- Position changes: " + ", ".join(position_changes) if position_changes else ""}
-
         Keep it short (2-3 sentences), exciting, and focused on the most interesting developments.
         If this is the final lap, make the commentary more dramatic and conclusive.
         """
+        resp = model.generate_content(commentary_prompt)
+        return resp.text
+    except Exception:
+        return f"Lap {lap_number}/{total_laps}: Racing continues!"
 
-        # Generate commentary using the model
-        response = model.generate_content(commentary_prompt)
-        return response.text
-    except Exception as e:
-        return f"Lap {lap_number}/{total_laps}: The race continues with {leader} in the lead."
 
-# --- Main UI ---
+# ─────────────────────────────────────────────
+# MAIN UI
+# ─────────────────────────────────────────────
+
 st.markdown(
     """
-    <div style="text-align: center; background-color: rgba(0,0,0,0.7); padding: 20px; border-radius: 15px; margin-bottom: 20px;">
-        <h1 style="color: #e10600; margin: 0; font-size: 3em; text-shadow: 2px 2px 4px rgba(0,0,0,0.7);">🏁 F1Expert AI Dashboard</h1>
-        <p style="color: #f2f2f2; font-size: 1.2em;">Your ultimate Formula 1 companion powered by AI</p>
+    <div style="text-align:center; background-color:rgba(0,0,0,0.7); padding:20px; border-radius:15px; margin-bottom:20px;">
+        <h1 style="color:#e10600; margin:0; font-size:3em; text-shadow:2px 2px 4px rgba(0,0,0,0.7);">🏁 F1Expert AI Dashboard</h1>
+        <p style="color:#f2f2f2; font-size:1.2em;">Your ultimate Formula 1 companion powered by AI</p>
     </div>
     """,
     unsafe_allow_html=True
 )
 
+# ── Discover available years once ────────────────────────────────────
+with st.spinner("🔍 Detecting available F1 data years…"):
+    AVAILABLE_YEARS = discover_available_years()
+
+if not AVAILABLE_YEARS:
+    st.error("❌ Could not connect to FastF1 data source. Please check your internet connection or try again later.")
+    st.stop()
+
+MIN_YEAR = min(AVAILABLE_YEARS)
+MAX_YEAR = max(AVAILABLE_YEARS)
+
 # Layout: 3 Columns
 col1, col2, col3 = st.columns([1, 2, 1])
 
-# --- Column 1: Chatbot ---
+# ── Column 1: Chatbot ─────────────────────────────────────────────────
 with col1:
     st.markdown(
         """
-        <div style="background-color: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; border-top: 4px solid #e10600;">
-            <h3 style="color: white; margin-top: 0;">💬 Ask RaceMaster</h3>
+        <div style="background-color:rgba(0,0,0,0.7); padding:15px; border-radius:10px; border-top:4px solid #e10600;">
+            <h3 style="color:white; margin-top:0;">💬 Ask RaceMaster</h3>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # Chat container
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-
-    # Display chat history
     messages = fetch_conversation_history()
     for message in messages:
         if message['role'] == 'model':
             st.markdown(f'<div class="bot-message"><strong>RaceMaster:</strong> {message["parts"]}</div>', unsafe_allow_html=True)
         elif message['role'] == 'user' and "System prompt" not in message['parts']:
             st.markdown(f'<div class="user-message"><strong>You:</strong> {message["parts"]}</div>', unsafe_allow_html=True)
-
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Chat input
-    # Chat input
 if st.session_state.get("trivia_active", False):
     st.markdown(
         """
-        <div style="background-color: rgba(225, 6, 0, 0.3); padding: 10px; border-radius: 5px; margin: 10px 0;">
-            <p style="color: white; margin: 0;">Chat is disabled during Trivia Game. Complete or end the game to resume chatting.</p>
+        <div style="background-color:rgba(225,6,0,0.3); padding:10px; border-radius:5px; margin:10px 0;">
+            <p style="color:white; margin:0;">Chat is disabled during Trivia Game.</p>
         </div>
         """,
         unsafe_allow_html=True
     )
-    # Disabled input (for visual consistency)
     st.text_input("Chat disabled during trivia...", disabled=True, key="disabled_chat")
 else:
     user_input = st.chat_input("Ask something about F1...")
     if user_input:
         messages = fetch_conversation_history()
         messages.append({"role": "user", "parts": user_input})
-
         with st.spinner("RaceMaster is thinking..."):
-            response_text = response(messages)
-
+            response_text = get_ai_response(messages)
         if isinstance(response_text, str):
             st.error(response_text)
         else:
             messages.append({"role": "model", "parts": response_text.text})
             st.rerun()
 
-# --- Column 2: Prediction + Trivia Tabs ---
+# ── Column 2: Prediction + Trivia ────────────────────────────────────
 with col2:
     tab1, tab2 = st.tabs(["🏎️ Race Predictor", "❓ F1 Trivia"])
 
+    # ── Tab 1: Race Predictor ─────────────────────────────────────────
     with tab1:
         st.markdown(
             """
-            <div style="background-color: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; border-top: 4px solid #e10600;">
-                <h3 style="color: white; margin-top: 0;">🔮 Predict Race Results</h3>
+            <div style="background-color:rgba(0,0,0,0.7); padding:15px; border-radius:10px; border-top:4px solid #e10600;">
+                <h3 style="color:white; margin-top:0;">🔮 Predict Race Results</h3>
             </div>
             """,
+            unsafe_allow_html=True
+        )
+
+        # Show user what data is available
+        st.markdown(
+            f"<p style='color:#aaaaaa; font-size:0.85em;'>📡 Data available for years: <strong style='color:#e10600'>{', '.join(map(str, AVAILABLE_YEARS))}</strong></p>",
             unsafe_allow_html=True
         )
 
@@ -622,162 +562,129 @@ with col2:
             col_year, col_gp = st.columns(2)
 
             with col_year:
-                MAX_AVAILABLE_YEAR = 2022  # adjust to whatever your cache actually has
-                selected_year = st.slider("Select Year", 2018, MAX_AVAILABLE_YEAR, MAX_AVAILABLE_YEAR)
+                selected_year = st.slider(
+                    "Select Year",
+                    min_value=MIN_YEAR,
+                    max_value=MAX_YEAR,
+                    value=MAX_YEAR
+                )
 
-            try:
-                schedule = fastf1.get_event_schedule(selected_year)
-                races = schedule[
-                    (schedule['EventFormat'].notna()) & (~schedule['EventName'].str.contains("Testing|Test", case=False))
-                ]['EventName'].tolist()
+            # Load schedule for selected year
+            schedule = get_schedule_for_year(selected_year)
 
+            if schedule is not None and len(schedule) > 0:
+                races = schedule['EventName'].tolist()
                 event_locations = dict(zip(schedule['EventName'], schedule['Location']))
 
                 with col_gp:
                     selected_gp = st.selectbox("Choose a Grand Prix", races)
 
                 if selected_gp:
-                    st.markdown(f"""
-                        <div style="background-color: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; margin: 10px 0;">
-                            <p style="color: white; margin: 0;"><strong>📍 Circuit:</strong> {event_locations[selected_gp]}</p>
+                    st.markdown(
+                        f"""
+                        <div style="background-color:rgba(0,0,0,0.5); padding:10px; border-radius:5px; margin:10px 0;">
+                            <p style="color:white; margin:0;"><strong>📍 Circuit:</strong> {event_locations.get(selected_gp, 'Unknown')}</p>
                         </div>
-                    """, unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Error loading race schedule: {e}")
+                        """,
+                        unsafe_allow_html=True
+                    )
+            else:
+                st.warning(f"⚠️ Could not load race schedule for {selected_year}.")
                 selected_gp = None
 
             if selected_gp and st.button("Run Prediction", key="predict_button"):
-                with st.spinner("Running prediction model..."):
-                    predictions, actual, has_real = predict_all_positions(selected_gp, selected_year)
+                with st.spinner("Running prediction model…"):
+                    predictions, actual, has_real = predict_all_positions(
+                        selected_gp, selected_year, AVAILABLE_YEARS
+                    )
 
-                    if predictions is not None:
-                        st.success("✅ Prediction complete!")
+                if predictions is not None:
+                    st.success("✅ Prediction complete!")
+                    st.session_state.predictions = predictions
 
-                        # Store in session state for live simulation
-                        st.session_state.predictions = predictions
+                    # Predicted finish order
+                    st.markdown("#### 🏁 Predicted Finish Order")
+                    st.dataframe(
+                        predictions[['Abbreviation', 'TeamName', 'Predicted Finish Time']],
+                        hide_index=True,
+                        use_container_width=True
+                    )
 
-                        # Show prediction table with styling
-                        st.markdown("#### 🏁 Predicted Finish Order")
-                        st.dataframe(
-                            predictions[['Abbreviation', 'TeamName', 'Predicted Finish Time']],
-                            hide_index=True,
-                            use_container_width=True
+                    # Bar chart
+                    st.markdown("#### 📊 Predicted Time Gaps")
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    fig.patch.set_facecolor('#1e1e1e')
+                    ax.set_facecolor('#1e1e1e')
+
+                    team_colors_list = [team_colors.get(team, '#777777') for team in predictions['TeamName']]
+                    bars = ax.barh(predictions['Abbreviation'], predictions['Time Gap (s)'],
+                                   color=team_colors_list, height=0.6)
+
+                    for i, (bar, team) in enumerate(zip(bars, predictions['TeamName'])):
+                        ax.text(bar.get_width() + 0.5, i, team, va='center', color='white', fontsize=8)
+
+                    ax.set_title(f"Predicted Time Gaps: {selected_gp} {selected_year}", color='white', fontsize=14)
+                    ax.set_xlabel('Gap to Leader (seconds)', color='white')
+                    ax.set_ylabel('Drivers', color='white')
+                    ax.tick_params(colors='white')
+                    ax.grid(True, linestyle='--', alpha=0.3)
+                    for spine in ax.spines.values():
+                        spine.set_color('#333333')
+                    plt.tight_layout()
+                    st.pyplot(fig)
+
+                    # Actual results comparison
+                    if has_real and actual is not None:
+                        st.markdown("#### 🏁 Actual Results")
+                        actual_sorted = actual.sort_values('Position')
+                        st.dataframe(actual_sorted[['Abbreviation', 'Position']],
+                                     hide_index=True, use_container_width=True)
+
+                        st.markdown("#### 📊 Prediction vs Actual")
+                        comparison_df = predictions.merge(
+                            actual[['Abbreviation', 'Position']], on='Abbreviation', how='left'
                         )
+                        comparison_df['Actual Position'] = comparison_df['Position'].fillna(0).astype(int)
 
-                        # Visualization with team colors
-                        st.markdown("#### 📊 Predicted Results Visualization")
+                        fig2, ax2 = plt.subplots(figsize=(10, 6))
+                        fig2.patch.set_facecolor('#1e1e1e')
+                        ax2.set_facecolor('#1e1e1e')
 
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        fig.patch.set_facecolor('#1e1e1e')
-                        ax.set_facecolor('#1e1e1e')
+                        scatter_colors = [team_colors.get(t, '#777777') for t in comparison_df['TeamName']]
+                        ax2.scatter(comparison_df['Predicted Position'], comparison_df['Actual Position'],
+                                    s=100, c=scatter_colors, alpha=0.7, edgecolors='white')
 
-                        # Set custom colors based on team
-                        team_colors_list = [team_colors.get(team, '#777777') for team in predictions['TeamName']]
+                        for i, txt in enumerate(comparison_df['Abbreviation']):
+                            ax2.annotate(txt,
+                                (comparison_df['Predicted Position'].iloc[i],
+                                 comparison_df['Actual Position'].iloc[i]),
+                                fontsize=9, color='white', ha='center', va='bottom',
+                                xytext=(0, 5), textcoords='offset points')
 
-                        # Create horizontal bar chart
-                        bars = ax.barh(
-                            predictions['Abbreviation'],
-                            predictions['Time Gap (s)'],
-                            color=team_colors_list,
-                            height=0.6
-                        )
-
-                        # Add team names as labels
-                        for i, (bar, team) in enumerate(zip(bars, predictions['TeamName'])):
-                            ax.text(
-                                bar.get_width() + 0.5,
-                                i,
-                                team,
-                                va='center',
-                                color='white',
-                                fontsize=8
-                            )
-
-                        # Styling
-                        ax.set_title(f"Predicted Time Gaps: {selected_gp} {selected_year}", color='white', fontsize=14)
-                        ax.set_xlabel('Gap to Leader (seconds)', color='white')
-                        ax.set_ylabel('Drivers', color='white')
-                        ax.tick_params(colors='white')
-                        ax.grid(True, linestyle='--', alpha=0.3)
-
-                        for spine in ax.spines.values():
+                        ax2.plot([0, 22], [0, 22], 'r--', alpha=0.5)
+                        ax2.set_title(f"Prediction vs Actual: {selected_gp} {selected_year}", color='white', fontsize=14)
+                        ax2.set_xlabel('Predicted Position', color='white')
+                        ax2.set_ylabel('Actual Position', color='white')
+                        ax2.tick_params(colors='white')
+                        ax2.grid(True, linestyle='--', alpha=0.3)
+                        for spine in ax2.spines.values():
                             spine.set_color('#333333')
-
                         plt.tight_layout()
-                        st.pyplot(fig)
+                        st.pyplot(fig2)
+                else:
+                    st.error("❌ Unable to generate predictions. Please try a different Grand Prix or year.")
 
-                        if has_real:
-                            st.markdown("#### 🏁 Actual Results")
-                            actual_sorted = actual.sort_values('Position')
-                            st.dataframe(
-                                actual_sorted[['Abbreviation', 'Position']],
-                                hide_index=True,
-                                use_container_width=True
-                            )
-
-                            # Comparison visualization
-                            st.markdown("#### 📊 Prediction vs Actual Results")
-                            comparison_df = predictions.merge(actual[['Abbreviation', 'Position']], on='Abbreviation', how='left')
-                            comparison_df['Actual Position'] = comparison_df['Position'].fillna(0).astype(int)
-
-                            fig, ax = plt.subplots(figsize=(10, 6))
-                            fig.patch.set_facecolor('#1e1e1e')
-                            ax.set_facecolor('#1e1e1e')
-
-                            team_colors_scatter = [team_colors.get(team, '#777777') for team in comparison_df['TeamName']]
-
-                            # Create scatter plot
-                            ax.scatter(
-                                comparison_df['Predicted Position'],
-                                comparison_df['Actual Position'],
-                                s=100,
-                                c=team_colors_scatter,
-                                alpha=0.7,
-                                edgecolors='white'
-                            )
-
-                            # Add driver abbreviations as labels
-                            for i, txt in enumerate(comparison_df['Abbreviation']):
-                                ax.annotate(
-                                    txt,
-                                    (comparison_df['Predicted Position'].iloc[i], comparison_df['Actual Position'].iloc[i]),
-                                    fontsize=9,
-                                    color='white',
-                                    ha='center',
-                                    va='bottom',
-                                    xytext=(0, 5),
-                                    textcoords='offset points'
-                                )
-
-                            # Diagonal line (perfect prediction)
-                            ax.plot([0, 20], [0, 20], 'r--', alpha=0.5)
-
-                            # Styling
-                            ax.set_title(f"Prediction vs Actual: {selected_gp} {selected_year}", color='white', fontsize=14)
-                            ax.set_xlabel('Predicted Position', color='white')
-                            ax.set_ylabel('Actual Position', color='white')
-                            ax.tick_params(colors='white')
-                            ax.grid(True, linestyle='--', alpha=0.3)
-
-                            for spine in ax.spines.values():
-                                spine.set_color('#333333')
-
-                            plt.tight_layout()
-                            st.pyplot(fig)
-                    else:
-                        st.error("Unable to generate predictions. Not enough historical data.")
-
+    # ── Tab 2: F1 Trivia ──────────────────────────────────────────────
     with tab2:
         st.markdown(
             """
-            <div style="background-color: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; border-top: 4px solid #e10600;">
-                <h3 style="color: white; margin-top: 0;">🎯 F1 Trivia Challenge</h3>
+            <div style="background-color:rgba(0,0,0,0.7); padding:15px; border-radius:10px; border-top:4px solid #e10600;">
+                <h3 style="color:white; margin-top:0;">🎯 F1 Trivia Challenge</h3>
             </div>
             """,
             unsafe_allow_html=True
         )
 
-        # Initialize trivia state
         if "trivia_questions" not in st.session_state:
             st.session_state.trivia_questions = []
             st.session_state.show_answers = {}
@@ -789,7 +696,7 @@ with col2:
 
         with col_trivia_btn:
             if st.button("Get New Trivia Questions"):
-                with st.spinner("Generating challenging trivia questions..."):
+                with st.spinner("Generating trivia questions..."):
                     st.session_state.trivia_questions = generate_f1_trivia()
                     st.session_state.show_answers = {i: False for i in range(len(st.session_state.trivia_questions))}
                     st.session_state.user_score = 0
@@ -800,83 +707,65 @@ with col2:
             if st.session_state.total_questions > 0:
                 st.markdown(
                     f"""
-                    <div style="background-color: rgba(0,50,0,0.7); padding: 10px; border-radius: 5px; text-align: center;">
-                        <p style="color: white; margin: 0; font-size: 1.2em;">Score: {st.session_state.user_score}/{st.session_state.total_questions}</p>
+                    <div style="background-color:rgba(0,50,0,0.7); padding:10px; border-radius:5px; text-align:center;">
+                        <p style="color:white; margin:0; font-size:1.2em;">Score: {st.session_state.user_score}/{st.session_state.total_questions}</p>
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
 
-        # Display trivia questions
         if st.session_state.trivia_questions:
             for i, qa in enumerate(st.session_state.trivia_questions):
-                with st.container():
+                st.markdown(
+                    f"""
+                    <div class="trivia-question">
+                        <p style="color:white; font-size:1.1em; font-weight:bold; margin-bottom:5px;">Question {i+1}:</p>
+                        <p style="color:white;">{qa['question']}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                if not st.session_state.show_answers.get(i, False):
+                    c1, c2 = st.columns([3, 1])
+                    with c1:
+                        user_answer = st.text_input("Your answer:", key=f"answer_input_{i}")
+                    with c2:
+                        if st.button("Submit", key=f"submit_{i}"):
+                            st.session_state[f"user_answer_{i}"] = user_answer
+                            st.session_state.show_answers[i] = True
+                            correct = qa['answer'].strip().lower()
+                            given  = user_answer.strip().lower()
+                            if given == correct:
+                                is_correct = True
+                            else:
+                                key_terms = [t for t in correct.split() if len(t) > 3]
+                                is_correct = bool([t for t in key_terms if t in given])
+                            if is_correct:
+                                st.session_state.user_score += 1
+                            st.rerun()
+
+                if st.session_state.show_answers.get(i, False):
+                    user_response = st.session_state.get(f"user_answer_{i}", "")
+                    correct = qa['answer'].strip().lower()
+                    given  = user_response.strip().lower()
+                    if given == correct:
+                        is_correct = True
+                    else:
+                        key_terms = [t for t in correct.split() if len(t) > 3]
+                        is_correct = bool([t for t in key_terms if t in given])
+
+                    bg = "rgba(0,100,0,0.5)" if is_correct else "rgba(225,0,0,0.5)"
                     st.markdown(
                         f"""
-                        <div class="trivia-question">
-                            <p style="color: white; font-size: 1.1em; font-weight: bold; margin-bottom: 5px;">Question {i+1}:</p>
-                            <p style="color: white;">{qa['question']}</p>
+                        <div style="background-color:{bg}; padding:10px; border-radius:5px; margin-top:5px;">
+                            <p style="color:white;"><strong>Your answer:</strong> {user_response}</p>
+                            <p style="color:white;"><strong>Correct answer:</strong> {qa['answer']}</p>
+                            <p style="color:white;"><strong>Result:</strong> {"✅ Correct!" if is_correct else "❌ Incorrect"}</p>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
-
-                    if not st.session_state.show_answers[i]:
-                        col1, col2 = st.columns([3, 1])
-
-                        with col1:
-                            if f"user_answer_{i}" not in st.session_state:
-                                st.session_state[f"user_answer_{i}"] = ""
-
-                            user_answer = st.text_input("Your answer:", key=f"answer_input_{i}")
-
-                        with col2:
-                            if st.button("Submit", key=f"submit_{i}"):
-                                st.session_state[f"user_answer_{i}"] = user_answer
-                                st.session_state.show_answers[i] = True
-
-                                # --- Fixed answer checking ---
-                                correct_answer = qa['answer'].strip().lower()
-                                user_input = user_answer.strip().lower()
-
-                                if user_input == correct_answer:
-                                    is_correct = True
-                                else:
-                                    key_terms = correct_answer.split()
-                                    significant_terms = [term for term in key_terms if len(term) > 3]
-                                    matches = [term for term in significant_terms if term in user_input]
-                                    is_correct = bool(matches)
-
-                                if is_correct:
-                                    st.session_state.user_score += 1
-
-                                st.rerun()
-
-                    # Show answer after submission
-                    if st.session_state.show_answers[i]:
-                        user_response = st.session_state.get(f"user_answer_{i}", "")
-
-                        correct_answer = qa['answer'].strip().lower()
-                        user_input = user_response.strip().lower()
-
-                        if user_input == correct_answer:
-                            is_correct = True
-                        else:
-                            key_terms = correct_answer.split()
-                            significant_terms = [term for term in key_terms if len(term) > 3]
-                            matches = [term for term in significant_terms if term in user_input]
-                            is_correct = bool(matches)
-
-                        st.markdown(
-                            f"""
-                            <div class="trivia-answer" style="background-color: rgba({0 if is_correct else 225}, {100 if is_correct else 0}, 0, 0.5);">
-                                <p style="color: white;"><strong>Your answer:</strong> {user_response}</p>
-                                <p style="color: white;"><strong>Correct answer:</strong> {qa['answer']}</p>
-                                <p style="color: white;"><strong>Result:</strong> {"✅ Correct!" if is_correct else "❌ Incorrect"}</p>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
         else:
             st.info("Click the button above to get some challenging F1 trivia questions!")
 
@@ -886,20 +775,18 @@ with col2:
                 st.rerun()
 
 
-# --- Column 3: Live Race Simulation ---
+# ── Column 3: Live Race Simulation ────────────────────────────────────
 with col3:
     st.markdown(
         """
-        <div style="background-color: rgba(0,0,0,0.7); padding: 15px; border-radius: 10px; border-top: 4px solid #e10600;">
-            <h3 style="color: white; margin-top: 0;">🌀 Live Race Tracking</h3>
+        <div style="background-color:rgba(0,0,0,0.7); padding:15px; border-radius:10px; border-top:4px solid #e10600;">
+            <h3 style="color:white; margin-top:0;">🌀 Live Race Tracking</h3>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # Check if we have predictions to simulate
     if "predictions" in st.session_state:
-        # Initialize race_active if not already set
         if "race_active" not in st.session_state:
             st.session_state.race_active = False
             st.session_state.commentary_history = []
@@ -907,25 +794,20 @@ with col3:
             st.session_state.race_points = {}
             st.session_state.auto_run = False
 
-        # Race configuration
         if not st.session_state.race_active:
             col_laps, col_auto = st.columns(2)
-
             with col_laps:
                 total_laps = st.slider("Number of Laps", min_value=5, max_value=50, value=10, step=5)
                 st.session_state.total_laps = total_laps
-
             with col_auto:
                 auto_run = st.checkbox("Auto Run Race", value=False)
                 st.session_state.auto_run = auto_run
-
                 if auto_run:
                     sim_speed = st.select_slider("Simulation Speed",
-                                                options=["Slow", "Medium", "Fast"],
-                                                value="Medium")
+                                                 options=["Slow", "Medium", "Fast"],
+                                                 value="Medium")
                     st.session_state.sim_speed = sim_speed
 
-        # Add simulation controls
         col_start, col_next, col_score = st.columns([1, 1, 1])
 
         with col_start:
@@ -936,9 +818,9 @@ with col3:
                     st.session_state.race_data = st.session_state.predictions.copy()
                     st.session_state.race_data['Current Gap'] = st.session_state.race_data['Time Gap (s)']
                     st.session_state.commentary_history = []
-
-                    # Initialize points dictionary for all drivers
-                    st.session_state.race_points = {driver: 0 for driver in st.session_state.race_data['Abbreviation'].tolist()}
+                    st.session_state.race_points = {
+                        d: 0 for d in st.session_state.race_data['Abbreviation'].tolist()
+                    }
                     st.rerun()
             else:
                 if st.button("Reset Simulation"):
@@ -950,36 +832,24 @@ with col3:
         with col_next:
             if st.session_state.race_active and not st.session_state.auto_run:
                 if st.button("Next Lap"):
-                    # Simulate next lap if not reached total laps
                     if st.session_state.race_lap < st.session_state.total_laps:
                         updated_data, current_lap = simulate_live_race(st.session_state.race_data)
-
-                        # Generate commentary for this lap
                         commentary = generate_race_commentary(current_lap, updated_data, st.session_state.total_laps)
-
-                        # Add commentary to history
-                        st.session_state.commentary_history.append({
-                            "lap": current_lap,
-                            "text": commentary
-                        })
-
-                        # Update driver points for current positions
+                        st.session_state.commentary_history.append({"lap": current_lap, "text": commentary})
                         if current_lap == st.session_state.total_laps:
-                            # Final lap - assign points
-                            points_structure = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]  # F1 points system
+                            points_structure = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
                             for i, (idx, driver) in enumerate(updated_data.iterrows()):
                                 if i < len(points_structure):
                                     st.session_state.race_points[driver['Abbreviation']] = points_structure[i]
-
                         st.rerun()
 
         with col_score:
             if st.session_state.race_active:
                 if st.session_state.race_lap == st.session_state.total_laps:
                     st.markdown(
-                        f"""
-                        <div style="background-color: rgba(0, 100, 0, 0.7); padding: 10px; border-radius: 5px; text-align: center; margin: 10px 0;">
-                            <p style="color: white; margin: 0; font-size: 1.2em;">Race Complete!</p>
+                        """
+                        <div style="background-color:rgba(0,100,0,0.7); padding:10px; border-radius:5px; text-align:center; margin:10px 0;">
+                            <p style="color:white; margin:0; font-size:1.2em;">🏆 Race Complete!</p>
                         </div>
                         """,
                         unsafe_allow_html=True
@@ -987,67 +857,43 @@ with col3:
                 else:
                     st.markdown(
                         f"""
-                        <div style="background-color: rgba(225, 6, 0, 0.7); padding: 10px; border-radius: 5px; text-align: center; margin: 10px 0;">
-                            <p style="color: white; margin: 0; font-size: 1.2em;">Lap: {st.session_state.race_lap}/{st.session_state.total_laps}</p>
+                        <div style="background-color:rgba(225,6,0,0.7); padding:10px; border-radius:5px; text-align:center; margin:10px 0;">
+                            <p style="color:white; margin:0; font-size:1.2em;">Lap: {st.session_state.race_lap}/{st.session_state.total_laps}</p>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
 
-        # Display race status if active
         if st.session_state.race_active:
-            # Auto-advance simulation if auto_run is enabled
             if st.session_state.auto_run and st.session_state.race_lap < st.session_state.total_laps:
-                # Determine delay based on simulation speed
                 speed_delays = {"Slow": 3.0, "Medium": 1.5, "Fast": 0.5}
-                delay = speed_delays.get(st.session_state.sim_speed, 1.5)
-
-                # Add a progress indicator for the current lap
+                delay = speed_delays.get(st.session_state.get('sim_speed', 'Medium'), 1.5)
                 progress_bar = st.progress(0)
                 for i in range(101):
                     progress_bar.progress(i)
-                    time.sleep(delay/100)
-
-                # Simulate next lap
+                    time.sleep(delay / 100)
                 updated_data, current_lap = simulate_live_race(st.session_state.race_data)
-
-                # Generate commentary for this lap
                 commentary = generate_race_commentary(current_lap, updated_data, st.session_state.total_laps)
-
-                # Add commentary to history
-                st.session_state.commentary_history.append({
-                    "lap": current_lap,
-                    "text": commentary
-                })
-
-                # Update driver points for current positions
+                st.session_state.commentary_history.append({"lap": current_lap, "text": commentary})
                 if current_lap == st.session_state.total_laps:
-                    # Final lap - assign points
-                    points_structure = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]  # F1 points system
+                    points_structure = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
                     for i, (idx, driver) in enumerate(updated_data.iterrows()):
                         if i < len(points_structure):
                             st.session_state.race_points[driver['Abbreviation']] = points_structure[i]
-
                 st.rerun()
 
-            # Display two sections side by side
             col_standings, col_points = st.columns(2)
 
             with col_standings:
-                # Display live standings
-                st.markdown("#### 🏁 Current Race Standings")
-
+                st.markdown("#### 🏁 Current Standings")
                 for i, (idx, driver) in enumerate(st.session_state.race_data.iterrows()):
                     position = i + 1
                     time_gap = driver['Current Gap']
                     time_display = "Leader" if i == 0 else f"+{time_gap:.3f}s"
-
-                    # Get team color
                     team_color = team_colors.get(driver['TeamName'], '#777777')
-
                     st.markdown(
                         f"""
-                        <div class="driver-card" style="border-left: 4px solid {team_color}">
+                        <div class="driver-card" style="border-left:4px solid {team_color}">
                             <span class="position">{position}</span>
                             <span class="driver-name">{driver['Abbreviation']}</span>
                             <span class="driver-time">{time_display}</span>
@@ -1057,21 +903,17 @@ with col3:
                     )
 
             with col_points:
-                # Display points table
-                st.markdown("#### 🏆 Championship Points")
-
-                # Sort points by value (highest first)
-                sorted_points = {k: v for k, v in sorted(st.session_state.race_points.items(),
-                                                        key=lambda item: item[1], reverse=True)}
-
+                st.markdown("#### 🏆 Points")
+                sorted_points = dict(sorted(st.session_state.race_points.items(),
+                                            key=lambda item: item[1], reverse=True))
                 for driver, points in sorted_points.items():
-                    # Find the team color for this driver
-                    driver_team = st.session_state.race_data[st.session_state.race_data['Abbreviation'] == driver]['TeamName'].values
+                    driver_team = st.session_state.race_data[
+                        st.session_state.race_data['Abbreviation'] == driver
+                    ]['TeamName'].values
                     team_color = team_colors.get(driver_team[0] if len(driver_team) > 0 else '', '#777777')
-
                     st.markdown(
                         f"""
-                        <div class="driver-card" style="border-left: 4px solid {team_color}">
+                        <div class="driver-card" style="border-left:4px solid {team_color}">
                             <span class="driver-name">{driver}</span>
                             <span class="position">{points} pts</span>
                         </div>
@@ -1079,39 +921,22 @@ with col3:
                         unsafe_allow_html=True
                     )
 
-            # Display commentary section
-            st.markdown("#### 🎙️ Race Commentary")
-
-            commentary_container = st.container()
-            with commentary_container:
-                # Create a styled container for commentary
-                st.markdown(
-                    """
-                    <div style="background-color: rgba(0,0,0,0.8); border-radius: 10px; padding: 10px; max-height: 300px; overflow-y: auto;">
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                if st.session_state.commentary_history:
-                    for comment in reversed(st.session_state.commentary_history):  # Show most recent first
-                        st.markdown(
-                            f"""
-                            <div style="background-color: rgba(30,30,30,0.7); padding: 8px; border-radius: 8px; margin-bottom: 8px; border-left: 3px solid #e10600;">
-                                <p style="color: #e10600; margin: 0; font-weight: bold;">Lap {comment['lap']}/{st.session_state.total_laps}</p>
-                                <p style="color: white; margin: 0;">{comment['text']}</p>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                else:
+            st.markdown("#### 🎙️ Commentary")
+            st.markdown('<div style="background-color:rgba(0,0,0,0.8); border-radius:10px; padding:10px; max-height:300px; overflow-y:auto;">', unsafe_allow_html=True)
+            if st.session_state.commentary_history:
+                for comment in reversed(st.session_state.commentary_history):
                     st.markdown(
-                        """
-                        <p style="color: #aaaaaa; text-align: center;">Commentary will appear once the race begins.</p>
+                        f"""
+                        <div style="background-color:rgba(30,30,30,0.7); padding:8px; border-radius:8px; margin-bottom:8px; border-left:3px solid #e10600;">
+                            <p style="color:#e10600; margin:0; font-weight:bold;">Lap {comment['lap']}/{st.session_state.total_laps}</p>
+                            <p style="color:white; margin:0;">{comment['text']}</p>
+                        </div>
                         """,
                         unsafe_allow_html=True
                     )
+            else:
+                st.markdown('<p style="color:#aaaaaa; text-align:center;">Commentary will appear once the race begins.</p>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-                st.markdown("</div>", unsafe_allow_html=True)
-
-        else:
-            st.info("Predict a race first, then start the simulation to see the live race tracking!")
+    else:
+        st.info("Predict a race first, then start the simulation!")
